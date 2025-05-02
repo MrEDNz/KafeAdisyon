@@ -1,20 +1,19 @@
 import tkinter as tk
 from tkinter import ttk, messagebox, simpledialog, filedialog
 import sqlite3
-from datetime import datetime, timedelta
-import os
+from datetime import datetime
 import csv
+import os
 
 class KafeAdisyonProgrami:
     def __init__(self, root):
         self.root = root
         self.root.title("Kafe Adisyon Programı")
-        self.root.state('zoomed')  # Tam ekran başlat
+        self.root.state('zoomed')
         
         # Veritabanı bağlantısı ve tablo oluşturma
         self.baglanti = sqlite3.connect("kafe.db")
         self.cursor = self.baglanti.cursor()
-        
         self.tablari_olustur()
         
         # Arayüz oluşturma
@@ -25,7 +24,6 @@ class KafeAdisyonProgrami:
         self.masalar_frame = ttk.Frame(self.notebook)
         self.notebook.add(self.masalar_frame, text="Masalar")
         
-        # Masalar için Canvas ve Scrollbar
         self.masalar_canvas = tk.Canvas(self.masalar_frame)
         self.masalar_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         
@@ -33,143 +31,119 @@ class KafeAdisyonProgrami:
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         self.masalar_canvas.configure(yscrollcommand=scrollbar.set)
         
-        # Masalar iç çerçevesi
         self.masalar_icerik_frame = ttk.Frame(self.masalar_canvas)
         self.masalar_canvas.create_window((0, 0), window=self.masalar_icerik_frame, anchor=tk.NW)
         
-        # Müşteriler sekmesi
+        # Masa detayları için sağ frame
+        self.masa_detay_frame = ttk.Frame(self.masalar_frame, width=300)
+        self.masa_detay_frame.pack(side=tk.RIGHT, fill=tk.Y, padx=5, pady=5)
+        
+        # Diğer sekmeler
         self.musteriler_frame = ttk.Frame(self.notebook)
         self.notebook.add(self.musteriler_frame, text="Müşteriler")
         
-        # Müşteriler Treeview
-        self.musteriler_tree = ttk.Treeview(self.musteriler_frame, columns=("ID", "Ad Soyad", "Telefon", "Eposta", "Kayıt Tarihi"), show="headings")
-        self.musteriler_tree.heading("ID", text="ID")
-        self.musteriler_tree.heading("Ad Soyad", text="Ad Soyad")
-        self.musteriler_tree.heading("Telefon", text="Telefon")
-        self.musteriler_tree.heading("Eposta", text="Eposta")
-        self.musteriler_tree.heading("Kayıt Tarihi", text="Kayıt Tarihi")
-        self.musteriler_tree.pack(fill=tk.BOTH, expand=True)
-        
-        # Müşteri işlem butonları
-        self.musteri_buton_frame = ttk.Frame(self.musteriler_frame)
-        self.musteri_buton_frame.pack(fill=tk.X)
-        
-        ttk.Button(self.musteri_buton_frame, text="Müşteri Ekle", command=self.musteri_ekle).pack(side=tk.LEFT)
-        ttk.Button(self.musteri_buton_frame, text="Müşteri Düzenle", command=self.musteri_duzenle).pack(side=tk.LEFT)
-        ttk.Button(self.musteri_buton_frame, text="Müşteri Sil", command=self.musteri_sil).pack(side=tk.LEFT)
-        
-        # Ürünler sekmesi
         self.urunler_frame = ttk.Frame(self.notebook)
         self.notebook.add(self.urunler_frame, text="Ürünler")
         
-        # Ürünler Treeview
-        self.urunler_tree = ttk.Treeview(self.urunler_frame, columns=("ID", "Ürün Adı", "Kategori", "Fiyat", "Stok"), show="headings")
-        self.urunler_tree.heading("ID", text="ID")
-        self.urunler_tree.heading("Ürün Adı", text="Ürün Adı")
-        self.urunler_tree.heading("Kategori", text="Kategori")
-        self.urunler_tree.heading("Fiyat", text="Fiyat")
-        self.urunler_tree.heading("Stok", text="Stok")
-        self.urunler_tree.pack(fill=tk.BOTH, expand=True)
-        
-        # Ürün işlem butonları
-        self.urun_buton_frame = ttk.Frame(self.urunler_frame)
-        self.urun_buton_frame.pack(fill=tk.X)
-        
-        ttk.Button(self.urun_buton_frame, text="Ürün Ekle", command=self.urun_ekle).pack(side=tk.LEFT)
-        ttk.Button(self.urun_buton_frame, text="Ürün Düzenle", command=self.urun_duzenle).pack(side=tk.LEFT)
-        ttk.Button(self.urun_buton_frame, text="Ürün Sil", command=self.urun_sil).pack(side=tk.LEFT)
-        ttk.Button(self.urun_buton_frame, text="Kategori Ekle", command=self.kategori_ekle).pack(side=tk.LEFT)
-        
-        # Raporlar sekmesi
         self.raporlar_frame = ttk.Frame(self.notebook)
         self.notebook.add(self.raporlar_frame, text="Raporlar")
         
-        # Rapor Treeview
-        self.rapor_tree = ttk.Treeview(self.raporlar_frame, columns=("Tarih", "Toplam Ciro", "Toplam Adet"), show="headings")
-        self.rapor_tree.heading("Tarih", text="Tarih")
-        self.rapor_tree.heading("Toplam Ciro", text="Toplam Ciro")
-        self.rapor_tree.heading("Toplam Adet", text="Toplam Adet")
-        self.rapor_tree.pack(fill=tk.BOTH, expand=True)
-        
-        # Rapor işlem butonları
-        self.rapor_buton_frame = ttk.Frame(self.raporlar_frame)
-        self.rapor_buton_frame.pack(fill=tk.X)
-        
-        ttk.Button(self.rapor_buton_frame, text="Günlük Rapor", command=self.gunluk_rapor).pack(side=tk.LEFT)
-        ttk.Button(self.rapor_buton_frame, text="Tarih Aralığı Rapor", command=self.tarih_araligi_rapor).pack(side=tk.LEFT)
-        ttk.Button(self.rapor_buton_frame, text="Excel'e Aktar", command=self.excele_aktar).pack(side=tk.LEFT)
-        ttk.Button(self.rapor_buton_frame, text="Text'e Aktar", command=self.texte_aktar).pack(side=tk.LEFT)
-        
-        # Masaları yükle
+        # Verileri yükle
         self.masalar = []
         self.masa_butonlari = []
         self.load_masalar()
         
-        # Müşterileri yükle
         self.musteriler = []
         self.load_musteriler()
         
-        # Ürünleri yükle
         self.urunler = []
         self.kategoriler = []
         self.load_urunler()
         self.load_kategoriler()
-
+        
+        # Pencere boyut değişikliği
+        self.masalar_icerik_frame.bind("<Configure>", lambda e: self.masalar_canvas.configure(scrollregion=self.masalar_canvas.bbox("all")))
+    
     def tablari_olustur(self):
+        """Gerekli veritabanı tablolarını oluşturur"""
+        tables = [
+            """CREATE TABLE IF NOT EXISTS masalar (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                masa_adi TEXT NOT NULL,
+                durum INTEGER DEFAULT 0,
+                musteri_id INTEGER DEFAULT 0,
+                acilis_zamani TEXT)""",
+            """CREATE TABLE IF NOT EXISTS musteriler (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ad_soyad TEXT NOT NULL,
+                telefon TEXT,
+                eposta TEXT,
+                kayit_tarihi TEXT)""",
+            """CREATE TABLE IF NOT EXISTS kategoriler (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                kategori_adi TEXT NOT NULL UNIQUE)""",
+            """CREATE TABLE IF NOT EXISTS urunler (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                urun_adi TEXT NOT NULL,
+                kategori_id INTEGER,
+                fiyat REAL NOT NULL,
+                stok INTEGER DEFAULT 0)""",
+            """CREATE TABLE IF NOT EXISTS adisyonlar (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                masa_id INTEGER NOT NULL,
+                musteri_id INTEGER,
+                urun_id INTEGER NOT NULL,
+                adet INTEGER NOT NULL,
+                toplam_fiyat REAL NOT NULL,
+                tarih TEXT NOT NULL,
+                durum INTEGER DEFAULT 0)"""
+        ]
+        
+        for table in tables:
+            try:
+                self.cursor.execute(table)
+            except sqlite3.Error as e:
+                messagebox.showerror("Veritabanı Hatası", f"Tablo oluşturulamadı: {str(e)}")
+        self.baglanti.commit()
+    
+    def load_masalar(self):
+        """Masaları veritabanından yükler ve gösterir"""
         try:
-            self.cursor.execute('''
-                CREATE TABLE IF NOT EXISTS masalar (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    masa_adi TEXT,
-                    durum INTEGER DEFAULT 0,
-                    musteri_id INTEGER DEFAULT 0,
-                    acilis_zamani TEXT
-                )
-            ''')
+            # Önceki butonları temizle
+            for btn in self.masa_butonlari:
+                btn.destroy()
+            self.masa_butonlari = []
             
-            self.cursor.execute('''
-                CREATE TABLE IF NOT EXISTS musteriler (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    ad_soyad TEXT,
-                    telefon TEXT,
-                    eposta TEXT,
-                    kayit_tarihi TEXT
-                )
-            ''')
+            # Masaları veritabanından al
+            self.cursor.execute("SELECT id, masa_adi, durum, musteri_id FROM masalar")
+            self.masalar = self.cursor.fetchall()
             
-            self.cursor.execute('''
-                CREATE TABLE IF NOT EXISTS kategoriler (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    kategori_adi TEXT
-                )
-            ''')
+            # Varsayılan masaları oluştur (eğer tablo boşsa)
+            if not self.masalar:
+                for i in range(1, 11):
+                    self.cursor.execute("INSERT INTO masalar (masa_adi) VALUES (?)", (f"Masa {i}",))
+                self.baglanti.commit()
+                self.cursor.execute("SELECT id, masa_adi, durum, musteri_id FROM masalar")
+                self.masalar = self.cursor.fetchall()
             
-            self.cursor.execute('''
-                CREATE TABLE IF NOT EXISTS urunler (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    urun_adi TEXT,
-                    kategori_id INTEGER,
-                    fiyat REAL,
-                    stok INTEGER DEFAULT 0
+            # Butonları oluştur
+            for masa in self.masalar:
+                masa_id, masa_adi, durum, musteri_id = masa
+                btn = tk.Button(
+                    self.masalar_icerik_frame,
+                    text=f"{masa_adi}\n{'Dolu' if durum else 'Boş'}",
+                    bg="red" if durum else "green",
+                    fg="white",
+                    font=('Helvetica', 12, 'bold'),
+                    width=15,
+                    height=8,
+                    command=lambda m_id=masa_id: self.masa_penceresi_ac(m_id)
                 )
-            ''')
-            
-            self.cursor.execute('''
-                CREATE TABLE IF NOT EXISTS adisyonlar (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    masa_id INTEGER,
-                    musteri_id INTEGER,
-                    urun_id INTEGER,
-                    adet INTEGER,
-                    toplam_fiyat REAL,
-                    tarih TEXT,
-                    durum INTEGER DEFAULT 0
-                )
-            ''')
-            
-            self.baglanti.commit()
+                btn.pack(side=tk.LEFT, padx=10, pady=10)
+                self.masa_butonlari.append(btn)
+                
         except sqlite3.Error as e:
-            messagebox.showerror("Veritabanı Hatası", f"Tablo oluşturulurken hata: {str(e)}")
+            messagebox.showerror("Veritabanı Hatası", f"Masalar yüklenemedi: {str(e)}")
 
     def load_masalar(self):
         try:
