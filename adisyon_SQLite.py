@@ -1,1629 +1,1405 @@
-import sys
-import sqlite3
 import tkinter as tk
-from tkinter import ttk, messagebox
-from datetime import datetime, timedelta
+from tkinter import ttk, messagebox, filedialog
+import sqlite3
+from datetime import datetime
 
-class KafeAdisyon:
+class CafeAdisyonProgrami:
     def __init__(self, root):
         self.root = root
-        self.root.title("Kafe Adisyon Sistemi")
-        self.root.geometry("1000x800")
+        self.root.title("Kafe Adisyon Programı")
+        self.root.geometry("1200x700")
         
         # Veritabanı bağlantısı
         self.conn = sqlite3.connect('kafe_adisyon.db')
-        self.cursor = self.conn.cursor()
-        
-        # Tabloları oluştur (yeniden düzenlenmiş hali)
         self.create_tables()
+        self.insert_sample_data()
         
-        # Stil ayarlarını yap
-        self.configure_styles()
-        
-        # Arayüz oluştur
+        # Arayüz
         self.create_ui()
         
         # Başlangıç verilerini yükle
-        self.load_initial_data()
+        self.load_urunler()
+        self.load_musteriler()
+        self.load_masalar()
+    
+    def insert_sample_data(self):
+        cursor = self.conn.cursor()
+        
+        # Masalar tablosuna örnek veriler ekle
+        cursor.execute("SELECT COUNT(*) FROM masalar")
+        if cursor.fetchone()[0] == 0:
+            for i in range(1, 11):
+                cursor.execute("INSERT INTO masalar (masa_adi, durum) VALUES (?, ?)", 
+                              (f"Masa {i}", "bos"))
+        
+        # Müşteriler tablosuna örnek veriler ekle
+        cursor.execute("SELECT COUNT(*) FROM musteriler")
+        if cursor.fetchone()[0] == 0:
+            sample_customers = [
+                ("Ahmet Yılmaz", "5551234567", "ahmet@example.com"),
+                ("Ayşe Kaya", "5557654321", "ayse@example.com"),
+                ("Mehmet Demir", "5559876543", "mehmet@example.com")
+            ]
+            for customer in sample_customers:
+                cursor.execute("INSERT INTO musteriler (ad_soyad, telefon, eposta, kayit_tarihi) VALUES (?, ?, ?, ?)",
+                             (customer[0], customer[1], customer[2], datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+        
+        # Ürünler tablosuna örnek veriler ekle
+        cursor.execute("SELECT COUNT(*) FROM urunler")
+        if cursor.fetchone()[0] == 0:
+            sample_products = [
+                ("Çay", 5.0, "Sıcak İçecek", 100),
+                ("Kahve", 10.0, "Sıcak İçecek", 80),
+                ("Su", 2.0, "Soğuk İçecek", 200),
+                ("Kola", 8.0, "Soğuk İçecek", 150),
+                ("Tost", 15.0, "Yiyecek", 50)
+            ]
+            for product in sample_products:
+                cursor.execute("INSERT INTO urunler (urun_adi, fiyat, kategori, stok) VALUES (?, ?, ?, ?)",
+                             (product[0], product[1], product[2], product[3]))
+        
+        self.conn.commit()
 
     def create_tables(self):
-        """Tüm gerekli tabloları oluşturur"""
-        tables = [
-            '''CREATE TABLE IF NOT EXISTS masalar (
-                masa_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                masa_adi TEXT,
-                durum TEXT DEFAULT 'bos',
-                musteri_adi TEXT,
-                son_islem_zamani DATETIME
-            )''',
-            '''CREATE TABLE IF NOT EXISTS kategoriler (
-                kategori_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                kategori_adi TEXT UNIQUE
-            )''',
-            '''CREATE TABLE IF NOT EXISTS urunler (
-                urun_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                urun_adi TEXT,
-                kategori_id INTEGER,
-                fiyat REAL,
-                FOREIGN KEY (kategori_id) REFERENCES kategoriler(kategori_id)
-            )''',
-            '''CREATE TABLE IF NOT EXISTS musteriler (
-                musteri_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                ad_soyad TEXT,
+        cursor = self.conn.cursor()
+        
+        # Masalar tablosu
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS masalar (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                masa_adi TEXT NOT NULL,
+                durum TEXT NOT NULL DEFAULT 'bos',
+                musteri_id INTEGER,
+                acilis_zamani TEXT,
+                kapanis_zamani TEXT,
+                toplam_tutar REAL DEFAULT 0,
+                FOREIGN KEY (musteri_id) REFERENCES musteriler(id)
+            )
+        ''')
+        
+        # Müşteriler tablosu
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS musteriler (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ad_soyad TEXT NOT NULL,
                 telefon TEXT,
                 eposta TEXT,
-                kayit_tarihi DATETIME
-            )''',
-            '''CREATE TABLE IF NOT EXISTS adisyonlar (
-                adisyon_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                masa_id INTEGER,
-                musteri_id INTEGER,
-                baslangic_zamani DATETIME,
-                kapanis_zamani DATETIME,
-                toplam_tutar REAL,
-                odeme_durumu TEXT DEFAULT 'acik',
-                FOREIGN KEY (masa_id) REFERENCES masalar(masa_id),
-                FOREIGN KEY (musteri_id) REFERENCES musteriler(musteri_id)
-            )''',
-            '''CREATE TABLE IF NOT EXISTS adisyon_detay (
-                detay_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                adisyon_id INTEGER,
-                urun_id INTEGER,
-                adet INTEGER,
-                fiyat REAL,
-                eklenme_zamani DATETIME,
-                islem_tipi TEXT,
-                FOREIGN KEY (adisyon_id) REFERENCES adisyonlar(adisyon_id),
-                FOREIGN KEY (urun_id) REFERENCES urunler(urun_id)
-            )''',
-            '''CREATE TABLE IF NOT EXISTS ara_odemeler (
-                odeme_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                adisyon_id INTEGER,
-                odeme_miktari REAL,
-                odeme_zamani DATETIME,
-                FOREIGN KEY (adisyon_id) REFERENCES adisyonlar(adisyon_id)
-            )'''
-        ]
+                kayit_tarihi TEXT
+            )
+        ''')
         
-        for table in tables:
-            try:
-                self.cursor.execute(table)
-            except Exception as e:
-                print(f"Tablo oluşturulurken hata: {str(e)}")
+        # Ürünler tablosu
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS urunler (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                urun_adi TEXT NOT NULL,
+                fiyat REAL NOT NULL,
+                kategori TEXT,
+                stok INTEGER DEFAULT 0
+            )
+        ''')
+        
+        # Adisyonlar tablosu
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS adisyonlar (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                masa_id INTEGER NOT NULL,
+                urun_id INTEGER NOT NULL,
+                adet INTEGER NOT NULL,
+                tarih TEXT NOT NULL,
+                durum TEXT NOT NULL DEFAULT 'aktif',
+                FOREIGN KEY (masa_id) REFERENCES masalar(id),
+                FOREIGN KEY (urun_id) REFERENCES urunler(id)
+            )
+        ''')
+        
+        # Geçmiş adisyonlar tablosu
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS gecmis_adisyonlar (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                masa_id INTEGER NOT NULL,
+                musteri_id INTEGER,
+                acilis_zamani TEXT,
+                kapanis_zamani TEXT,
+                toplam_tutar REAL,
+                adisyon_detay TEXT,
+                FOREIGN KEY (masa_id) REFERENCES masalar(id),
+                FOREIGN KEY (musteri_id) REFERENCES musteriler(id)
+            )
+        ''')
         
         self.conn.commit()
     
-    def configure_styles(self):
-        """Tüm stil ayarlarını merkezi olarak yapar"""
-        style = ttk.Style()
-        style.theme_use('clam')
-        
-        # Combobox stili
-        style.configure('TCombobox',
-                      foreground='black',
-                      background='white',
-                      fieldbackground='white',
-                      selectbackground='#0078d7',
-                      selectforeground='white',
-                      padding=5,
-                      relief='solid',
-                      bordercolor='#cccccc')
-        
-        style.map('TCombobox',
-                fieldbackground=[('readonly', 'white')],
-                selectbackground=[('readonly', '#0078d7')],
-                selectforeground=[('readonly', 'white')])
-        
-        # Diğer stiller
-        style.configure('TFrame', background='#f0f0f0')
-        style.configure('TLabel', background='#f0f0f0', foreground='black')
-        style.configure('TButton', padding=5, background='#e1e1e1')
-        style.configure('Treeview', background='white', fieldbackground='white', foreground='black')
-        style.map('Treeview', background=[('selected', '#0078d7')], foreground=[('selected', 'white')])
-    
     def create_ui(self):
-        # Notebook (sekmeler) oluştur
+        # Notebook (Sekmeler)
         self.notebook = ttk.Notebook(self.root)
         self.notebook.pack(fill='both', expand=True)
         
-        # Masalar sekmesi
+        # Masalar Sekmesi
         self.masalar_frame = ttk.Frame(self.notebook)
         self.notebook.add(self.masalar_frame, text='Masalar')
         
-        # Ürünler sekmesi
-        self.urunler_frame = ttk.Frame(self.notebook)
-        self.notebook.add(self.urunler_frame, text='Ürünler')
-        
-        # Müşteriler sekmesi
+        # Müşteriler Sekmesi
         self.musteriler_frame = ttk.Frame(self.notebook)
         self.notebook.add(self.musteriler_frame, text='Müşteriler')
         
-        # Raporlar sekmesi
+        # Ürünler Sekmesi
+        self.urunler_frame = ttk.Frame(self.notebook)
+        self.notebook.add(self.urunler_frame, text='Ürünler')
+        
+        # Raporlar Sekmesi
         self.raporlar_frame = ttk.Frame(self.notebook)
         self.notebook.add(self.raporlar_frame, text='Raporlar')
         
         # Masalar sekmesi içeriği
-        self.create_masalar_tab()
-        
-        # Ürünler sekmesi içeriği
-        self.create_urunler_tab()
+        self.create_masalar_ui()
         
         # Müşteriler sekmesi içeriği
-        self.create_musteriler_tab()
+        self.create_musteriler_ui()
+        
+        # Ürünler sekmesi içeriği
+        self.create_urunler_ui()
         
         # Raporlar sekmesi içeriği
-        self.create_raporlar_tab()
+        self.create_raporlar_ui()
     
-    def create_masalar_tab(self):
-        # Masa yönetim butonları
-        btn_frame = ttk.Frame(self.masalar_frame)
-        btn_frame.pack(pady=10)
+    def create_masalar_ui(self):
+        # Ana frame
+        main_frame = ttk.Frame(self.masalar_frame)
+        main_frame.pack(fill='both', expand=True, padx=10, pady=10)
         
-        self.btn_masa_ekle = ttk.Button(btn_frame, text="Masa Ekle", command=self.masa_ekle)
-        self.btn_masa_ekle.pack(side='left', padx=5)
+        # Sol Frame (Masa Listesi)
+        left_frame = ttk.Frame(main_frame)
+        left_frame.pack(side='left', fill='both', expand=True)
         
-        self.btn_masa_sil = ttk.Button(btn_frame, text="Masa Sil", command=self.masa_sil)
-        self.btn_masa_sil.pack(side='left', padx=5)
+        # Masa işlemleri butonları
+        masa_islem_frame = ttk.Frame(left_frame)
+        masa_islem_frame.pack(fill='x', pady=5)
         
-        # Masaları gösterecek canvas ve frame
-        self.canvas = tk.Canvas(self.masalar_frame, bg='#f0f0f0', highlightthickness=0)
-        self.scrollbar = ttk.Scrollbar(self.masalar_frame, orient="vertical", command=self.canvas.yview)
-        self.scrollable_frame = ttk.Frame(self.canvas)
+        ttk.Button(masa_islem_frame, text="Yeni Masa Ekle", command=self.yeni_masa_ekle).pack(side='left', padx=5)
+        ttk.Button(masa_islem_frame, text="Masa Sil", command=self.masa_sil).pack(side='left', padx=5)
         
-        self.scrollable_frame.bind(
-            "<Configure>",
-            lambda e: self.canvas.configure(
-                scrollregion=self.canvas.bbox("all")
-            )
-        )
+        ttk.Label(left_frame, text="Masalar", font=('Arial', 12, 'bold')).pack(pady=5)
         
-        self.canvas.create_window((0, 0), window=self.scrollable_frame, anchor="nw")
-        self.canvas.configure(yscrollcommand=self.scrollbar.set)
+        # Masa butonları için frame
+        self.masalar_inner_frame = ttk.Frame(left_frame)
+        self.masalar_inner_frame.pack(fill='both', expand=True)
         
-        self.canvas.pack(side="left", fill="both", expand=True)
-        self.scrollbar.pack(side="right", fill="y")
+        # Sağ Frame (Masa Detayları)
+        right_frame = ttk.Frame(main_frame, width=400)
+        right_frame.pack(side='right', fill='y')
         
-        # Masaları yükle
-        self.load_masalar()
+        # Masa Detayları
+        self.masa_detay_frame = ttk.LabelFrame(right_frame, text="Masa Detayları")
+        self.masa_detay_frame.pack(fill='x', pady=5)
+        
+        ttk.Label(self.masa_detay_frame, text="Masa Adı:").grid(row=0, column=0, sticky='w', padx=5, pady=2)
+        self.masa_adi_label = ttk.Label(self.masa_detay_frame, text="")
+        self.masa_adi_label.grid(row=0, column=1, sticky='w', padx=5, pady=2)
+        
+        ttk.Label(self.masa_detay_frame, text="Durum:").grid(row=1, column=0, sticky='w', padx=5, pady=2)
+        self.masa_durum_label = ttk.Label(self.masa_detay_frame, text="")
+        self.masa_durum_label.grid(row=1, column=1, sticky='w', padx=5, pady=2)
+        
+        ttk.Label(self.masa_detay_frame, text="Müşteri:").grid(row=2, column=0, sticky='w', padx=5, pady=2)
+        self.masa_musteri_label = ttk.Label(self.masa_detay_frame, text="")
+        self.masa_musteri_label.grid(row=2, column=1, sticky='w', padx=5, pady=2)
+        
+        ttk.Label(self.masa_detay_frame, text="Açılış Zamanı:").grid(row=3, column=0, sticky='w', padx=5, pady=2)
+        self.masa_acilis_label = ttk.Label(self.masa_detay_frame, text="")
+        self.masa_acilis_label.grid(row=3, column=1, sticky='w', padx=5, pady=2)
+        
+        ttk.Label(self.masa_detay_frame, text="Toplam Tutar:").grid(row=4, column=0, sticky='w', padx=5, pady=2)
+        self.masa_tutar_label = ttk.Label(self.masa_detay_frame, text="")
+        self.masa_tutar_label.grid(row=4, column=1, sticky='w', padx=5, pady=2)
+        
+        # Masa İşlemleri
+        self.masa_islemleri_frame = ttk.LabelFrame(right_frame, text="Masa İşlemleri")
+        self.masa_islemleri_frame.pack(fill='x', pady=5)
+        
+        self.masa_ac_button = ttk.Button(self.masa_islemleri_frame, text="Masa Aç", command=self.masa_ac_pencere)
+        self.masa_ac_button.pack(fill='x', padx=5, pady=2)
+        
+        self.masa_kapat_button = ttk.Button(self.masa_islemleri_frame, text="Hesap Kapat", command=self.hesap_kapat_pencere)
+        self.masa_kapat_button.pack(fill='x', padx=5, pady=2)
+        
+        # Başlangıçta masa işlemlerini devre dışı bırak
+        self.masa_ac_button.config(state='disabled')
+        self.masa_kapat_button.config(state='disabled')
     
     def load_masalar(self):
-        # Önceki masaları temizle
-        for widget in self.scrollable_frame.winfo_children():
+        # Önce mevcut butonları temizle
+        for widget in self.masalar_inner_frame.winfo_children():
             widget.destroy()
         
-        # Masaları veritabanından al
-        self.cursor.execute("SELECT masa_id, masa_adi, durum, musteri_adi, son_islem_zamani FROM masalar ORDER BY masa_id")
-        masalar = self.cursor.fetchall()
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT id, masa_adi, durum FROM masalar ORDER BY id")
+        masalar = cursor.fetchall()
         
-        if not masalar:
-            label = ttk.Label(self.scrollable_frame, text="Henüz masa eklenmemiş.")
-            label.pack(pady=20)
-            return
-        
-        # Her satır için frame oluştur
-        row_frame = None
+        # 5 sütunlu bir grid oluştur
         for i, masa in enumerate(masalar):
-            masa_id, masa_adi, durum, musteri_adi, son_islem_zamani = masa
-            
-            # Her 6 masada bir yeni satır başlat
-            if i % 6 == 0:
-                row_frame = ttk.Frame(self.scrollable_frame)
-                row_frame.pack(fill='x', pady=5)
-            
-            # Masa buton metni düzenlemesi
-            btn_lines = [f"Masa {masa_id}"]  # 1. satır her zaman "Masa X"
-            
-            if masa_adi and masa_adi != f"Masa {masa_id}":  # Özel isim varsa
-                btn_lines.append(masa_adi)  # 2. satır masa özel adı
-                
-            if musteri_adi:  # Müşteri adı varsa
-                btn_lines.append(musteri_adi)  # 3. satır müşteri adı
-                
-            btn_text = '\n'.join(btn_lines)
+            masa_id, masa_adi, durum = masa
             
             # Masa durumuna göre renk belirle
-            bg_color = self.get_masa_rengi(durum, son_islem_zamani)
+            if durum == 'dolu':
+                bg_color = '#ffcccc'  # Kırmızı
+            else:
+                bg_color = '#ccffcc'  # Yeşil
             
-            btn = tk.Button(
-                row_frame,
-                text=btn_text,
-                width=19,
-                height=10,
+            row = i // 5
+            col = i % 5
+            
+            masa_btn = tk.Button(
+                self.masalar_inner_frame,
+                text=masa_adi,
+                width=15,
+                height=3,
                 bg=bg_color,
-                fg='black',
-                relief='raised',
-                borderwidth=2,
-                command=lambda m_id=masa_id: self.masa_ac(m_id)
+                command=lambda id=masa_id: self.masa_sec(id)
             )
-            btn.pack(side='left', padx=10, pady=5, expand=True)
+            masa_btn.grid(row=row, column=col, padx=5, pady=5, sticky='nsew')
+            
+            # Grid hücrelerinin genişlemesini sağla
+            self.masalar_inner_frame.grid_rowconfigure(row, weight=1)
+            self.masalar_inner_frame.grid_columnconfigure(col, weight=1)
     
-    def get_masa_rengi(self, durum, son_islem_zamani):
-        """Masa durumuna göre renk belirle"""
-        if durum == 'bos':
-            return '#e6ffe6'  # Açık yeşil
-        elif durum == 'dolu':
-            if son_islem_zamani:
-                son_islem = datetime.strptime(son_islem_zamani, '%Y-%m-%d %H:%M:%S')
-                if (datetime.now() - son_islem) > timedelta(minutes=30):
-                    return '#fff2e6'  # Açık turuncu (30 dakikadır boş)
-            return '#ffe6e6'  # Açık kırmızı (dolu)
-        elif durum == 'sabit_musteri':
-            return '#e6f3ff'  # Açık mavi
-        return 'white'
+    def masa_sec(self, masa_id):
+        self.secili_masa_id = masa_id
+        
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT masa_adi, durum, musteri_id, acilis_zamani, toplam_tutar FROM masalar WHERE id=?", (masa_id,))
+        masa = cursor.fetchone()
+        
+        if masa:
+            masa_adi, durum, musteri_id, acilis_zamani, toplam_tutar = masa
+            
+            # Masa detaylarını göster
+            self.masa_adi_label.config(text=masa_adi)
+            self.masa_durum_label.config(text=durum.capitalize())
+            self.masa_acilis_label.config(text=acilis_zamani if acilis_zamani else "-")
+            self.masa_tutar_label.config(text=f"{toplam_tutar:.2f} TL" if toplam_tutar else "0.00 TL")
+            
+            # Müşteri bilgilerini yükle
+            if musteri_id:
+                cursor.execute("SELECT ad_soyad FROM musteriler WHERE id=?", (musteri_id,))
+                musteri = cursor.fetchone()
+                if musteri:
+                    self.masa_musteri_label.config(text=musteri[0])
+                else:
+                    self.masa_musteri_label.config(text="-")
+            else:
+                self.masa_musteri_label.config(text="-")
+            
+            # Duruma göre butonları ayarla
+            if durum == 'bos':
+                self.masa_ac_button.config(state='normal')
+                self.masa_kapat_button.config(state='disabled')
+            else:
+                self.masa_ac_button.config(state='disabled')
+                self.masa_kapat_button.config(state='normal')
     
-    def masa_ekle(self):
-        def save_masa():
-            masa_adi = entry_masa_adi.get()
-            
-            # Son masa numarasını bul
-            self.cursor.execute("SELECT MAX(masa_id) FROM masalar")
-            last_id = self.cursor.fetchone()[0]
-            new_id = (last_id or 0) + 1
-            
-            # Masa adı yoksa sadece numarayı kullan
-            if not masa_adi:
-                masa_adi = f"Masa {new_id}"
-            
-            self.cursor.execute("INSERT INTO masalar (masa_id, masa_adi) VALUES (?, ?)", 
-                              (new_id, masa_adi))
-            self.conn.commit()
-            top.destroy()
-            self.load_masalar()
+    def yeni_masa_ekle(self):
+        self.masa_ekle_window = tk.Toplevel(self.root)
+        self.masa_ekle_window.title("Yeni Masa Ekle")
+        self.masa_ekle_window.geometry("300x150")
         
-        top = tk.Toplevel(self.root)
-        top.title("Masa Ekle")
+        ttk.Label(self.masa_ekle_window, text="Masa Adı:").pack(pady=5)
+        self.yeni_masa_adi = ttk.Entry(self.masa_ekle_window)
+        self.yeni_masa_adi.pack(fill='x', padx=10, pady=5)
         
-        # Son masa numarasını göster
-        self.cursor.execute("SELECT MAX(masa_id) FROM masalar")
-        last_id = self.cursor.fetchone()[0]
-        new_id = (last_id or 0) + 1
+        button_frame = ttk.Frame(self.masa_ekle_window)
+        button_frame.pack(fill='x', padx=10, pady=10)
         
-        ttk.Label(top, text=f"Yeni Masa Numarası: {new_id}", font=('Arial', 10, 'bold')).pack(pady=5)
+        ttk.Button(button_frame, text="Ekle", command=self.masa_ekle_kaydet).pack(side='left', padx=5)
+        ttk.Button(button_frame, text="İptal", command=self.masa_ekle_window.destroy).pack(side='right', padx=5)
+    
+    def masa_ekle_kaydet(self):
+        masa_adi = self.yeni_masa_adi.get().strip()
+        if not masa_adi:
+            messagebox.showerror("Hata", "Masa adı boş olamaz!")
+            return
         
-        ttk.Label(top, text="Masa Adı (Opsiyonel):").pack(pady=5)
-        entry_masa_adi = ttk.Entry(top)
-        entry_masa_adi.pack(pady=5)
+        cursor = self.conn.cursor()
+        cursor.execute("INSERT INTO masalar (masa_adi) VALUES (?)", (masa_adi,))
+        self.conn.commit()
         
-        ttk.Button(top, text="Kaydet", command=save_masa).pack(pady=10)
+        self.masa_ekle_window.destroy()
+        self.load_masalar()
+        messagebox.showinfo("Başarılı", "Masa başarıyla eklendi!")
     
     def masa_sil(self):
-        def delete_masa():
-            selected = listbox.curselection()
-            if selected:
-                masa_id = masalar[selected[0]][0]
-                self.cursor.execute("DELETE FROM masalar WHERE masa_id=?", (masa_id,))
-                self.conn.commit()
-                top.destroy()
-                self.load_masalar()
-        
-        self.cursor.execute("SELECT masa_id, masa_adi FROM masalar")
-        masalar = self.cursor.fetchall()
-        
-        if not masalar:
-            messagebox.showinfo("Bilgi", "Silinecek masa bulunamadı.")
+        if not hasattr(self, 'secili_masa_id'):
+            messagebox.showwarning("Uyarı", "Lütfen silmek istediğiniz masayı seçin!")
             return
         
-        top = tk.Toplevel(self.root)
-        top.title("Masa Sil")
+        masa_id = self.secili_masa_id
+        cursor = self.conn.cursor()
         
-        ttk.Label(top, text="Silinecek Masayı Seçin:").pack(pady=5)
+        # Masa durumunu kontrol et
+        cursor.execute("SELECT durum FROM masalar WHERE id=?", (masa_id,))
+        durum = cursor.fetchone()[0]
         
-        listbox = tk.Listbox(top)
-        for masa in masalar:
-            listbox.insert('end', f"Masa {masa[0]} - {masa[1]}")
-        listbox.pack(pady=5, fill='both', expand=True)
+        if durum == 'dolu':
+            messagebox.showerror("Hata", "Dolu olan bir masa silinemez!")
+            return
         
-        ttk.Button(top, text="Sil", command=delete_masa).pack(pady=10)
-    
-    def masa_ac(self, masa_id):
-        try:
-            self.masa_penceresi = tk.Toplevel(self.root)
-            self.masa_penceresi.title(f"Masa {masa_id}")
-            self.masa_penceresi.geometry("800x600")
-            
-            self.current_masa_id = masa_id
-            
-            # Masa bilgilerini al
-            self.cursor.execute("SELECT masa_adi, musteri_adi FROM masalar WHERE masa_id=?", (masa_id,))
-            masa_info = self.cursor.fetchone()
-            masa_adi, musteri_adi = masa_info if masa_info else (None, None)
-            
-            # Notebook oluştur
-            self.masa_notebook = ttk.Notebook(self.masa_penceresi)
-            self.masa_notebook.pack(fill='both', expand=True)
-            
-            # Sipariş sekmesi
-            self.siparis_frame = ttk.Frame(self.masa_notebook)
-            self.masa_notebook.add(self.siparis_frame, text='Sipariş')
-            
-            # Geçmiş Adisyonlar sekmesi
-            self.gecmis_frame = ttk.Frame(self.masa_notebook)
-            self.masa_notebook.add(self.gecmis_frame, text='Geçmiş Adisyonlar')
-            
-            # Müşteri bilgileri sekmesi
-            self.musteri_frame = ttk.Frame(self.masa_notebook)
-            self.masa_notebook.add(self.musteri_frame, text='Müşteri Bilgileri')
-            
-            # Masa bilgileri üst kısım
-            info_frame = ttk.Frame(self.siparis_frame)
-            info_frame.pack(fill='x', padx=10, pady=10)
-            
-            ttk.Label(info_frame, text=f"Masa {masa_id}").pack(side='left')
-            if masa_adi:
-                ttk.Label(info_frame, text=f" - {masa_adi}").pack(side='left')
-            
-            # Müşteri seçim alanı
-            musteri_frame = ttk.Frame(self.siparis_frame)
-            musteri_frame.pack(fill='x', padx=10, pady=5)
-            
-            ttk.Label(musteri_frame, text="Müşteri:").pack(side='left')
-            
-            # Müşteri seçim combobox'ı
-            self.musteri_combobox = ttk.Combobox(musteri_frame, state='readonly')
-            self.musteri_combobox.pack(side='left', padx=5, fill='x', expand=True)
-            
-            # Mevcut müşterileri yükle
-            self.load_musteriler_combobox()
-            
-            # Mevcut müşteriyi seç
-            if musteri_adi:
-                self.musteri_combobox.set(musteri_adi)
-            
-            # Yeni müşteri ekle butonu
-            btn_yeni_musteri = ttk.Button(musteri_frame, text="Yeni Müşteri", 
-                                        command=self.yeni_musteri_ekle)
-            btn_yeni_musteri.pack(side='left', padx=5)
-            
-            # Müşteri kaydet butonu
-            btn_musteri_kaydet = ttk.Button(musteri_frame, text="Kaydet", 
-                                          command=lambda: self.musteri_ata_kaydet(masa_id))
-            btn_musteri_kaydet.pack(side='left')
-            
-            # Ürün ekleme alanı
-            urun_ekle_frame = ttk.Frame(self.siparis_frame)
-            urun_ekle_frame.pack(fill='x', padx=10, pady=10)
-            
-            ttk.Label(urun_ekle_frame, text="Ürün:").pack(side='left')
-            
-            # Kategori filtreleme
-            self.kategori_var = tk.StringVar()
-            self.kategori_var.set("Tüm Kategoriler")
-            
-            self.cursor.execute("SELECT kategori_adi FROM kategoriler")
-            kategoriler = ["Tüm Kategoriler"] + [k[0] for k in self.cursor.fetchall()]
-            
-            kategori_menu = ttk.OptionMenu(urun_ekle_frame, self.kategori_var, *kategoriler, command=self.filter_urunler)
-            kategori_menu.pack(side='left', padx=5)
-            
-            # Ürün seçimi
-            self.urun_var = tk.StringVar()
-            self.urun_combobox = ttk.Combobox(urun_ekle_frame, textvariable=self.urun_var, state='readonly')
-            self.urun_combobox.pack(side='left', padx=5, fill='x', expand=True)
-            self.filter_urunler()
-            
-            ttk.Label(urun_ekle_frame, text="Adet:").pack(side='left', padx=5)
-            self.adet_var = tk.IntVar(value=1)
-            spin_adet = ttk.Spinbox(urun_ekle_frame, from_=1, to=10, textvariable=self.adet_var, width=3)
-            spin_adet.pack(side='left')
-            
-            btn_urun_ekle = ttk.Button(urun_ekle_frame, text="Ekle", command=self.urun_ekle)
-            btn_urun_ekle.pack(side='left', padx=5)
-            
-            # Sipariş listesi
-            columns = ('urun', 'adet', 'fiyat', 'toplam', 'islem')
-            self.siparis_tree = ttk.Treeview(self.siparis_frame, columns=columns, show='headings')
-            
-            self.siparis_tree.heading('urun', text='Ürün')
-            self.siparis_tree.heading('adet', text='Adet')
-            self.siparis_tree.heading('fiyat', text='Birim Fiyat')
-            self.siparis_tree.heading('toplam', text='Toplam')
-            self.siparis_tree.heading('islem', text='İşlem')
-            
-            self.siparis_tree.column('urun', width=200)
-            self.siparis_tree.column('adet', width=50, anchor='center')
-            self.siparis_tree.column('fiyat', width=100, anchor='e')
-            self.siparis_tree.column('toplam', width=100, anchor='e')
-            self.siparis_tree.column('islem', width=100, anchor='center')
-            
-            self.siparis_tree.pack(fill='both', expand=True, padx=10, pady=10)
-            
-            # Sil butonu
-            btn_urun_sil = ttk.Button(self.siparis_frame, text="Seçili Ürünü Sil", command=self.urun_sil)
-            btn_urun_sil.pack(side='left', padx=10, pady=5)
-            
-            # Toplam ve ödeme butonları
-            bottom_frame = ttk.Frame(self.siparis_frame)
-            bottom_frame.pack(fill='x', padx=10, pady=10)
-            
-            self.toplam_var = tk.StringVar(value="Toplam: 0.00 TL")
-            ttk.Label(bottom_frame, textvariable=self.toplam_var, font=('Arial', 12, 'bold')).pack(side='left')
-            
-            btn_ara_odeme = ttk.Button(bottom_frame, text="Ara Ödeme", command=self.ara_odeme)
-            btn_ara_odeme.pack(side='right', padx=5)
-            
-            btn_kapat = ttk.Button(bottom_frame, text="Hesap Kapat", command=self.hesap_kapat)
-            btn_kapat.pack(side='right', padx=5)
-            
-            # Geçmiş adisyonlar sekmesini doldur
-            self.load_gecmis_adisyonlar()
-            
-            # Müşteri bilgileri sekmesini doldur
-            self.load_musteri_bilgileri()
-            
-            # Masa durumunu güncelle
-            self.update_masa_durum(masa_id, 'dolu')
-            
-            # Aktif adisyonu kontrol et
-            self.check_active_adisyon(masa_id)
-            
-        except Exception as e:
-            messagebox.showerror("Hata", f"Masa açılırken hata oluştu: {str(e)}")
-            if hasattr(self, 'masa_penceresi'):
-                self.masa_penceresi.destroy()
-    
-    def load_musteriler_combobox(self):
-        """Müşteri combobox'ını doldur"""
-        self.cursor.execute("SELECT ad_soyad FROM musteriler ORDER BY ad_soyad")
-        musteriler = [m[0] for m in self.cursor.fetchall()]
-        self.musteri_combobox['values'] = musteriler
-    
-    def yeni_musteri_ekle(self):
-        """Masa penceresinden yeni müşteri ekle"""
-        def save_musteri():
-            ad_soyad = entry_ad.get()
-            telefon = entry_tel.get()
-            eposta = entry_eposta.get()
-            
-            if not ad_soyad:
-                messagebox.showwarning("Uyarı", "Ad soyad boş olamaz!")
-                return
-            
-            self.cursor.execute('''
-                INSERT INTO musteriler (ad_soyad, telefon, eposta, kayit_tarihi)
-                VALUES (?, ?, ?, ?)
-            ''', (ad_soyad, telefon if telefon else None, 
-                  eposta if eposta else None, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+        # Masa adisyonlarını kontrol et
+        cursor.execute("SELECT COUNT(*) FROM adisyonlar WHERE masa_id=? AND durum='aktif'", (masa_id,))
+        if cursor.fetchone()[0] > 0:
+            messagebox.showerror("Hata", "Bu masada aktif adisyonlar var. Önce adisyonları temizlemelisiniz!")
+            return
+        
+        masa_adi = self.masa_adi_label.cget("text")
+        if messagebox.askyesno("Onay", f"'{masa_adi}' adlı masayı silmek istediğinize emin misiniz?"):
+            cursor.execute("DELETE FROM masalar WHERE id=?", (masa_id,))
             self.conn.commit()
             
-            top.destroy()
-            self.load_musteriler_combobox()
-            self.musteri_combobox.set(ad_soyad)
-            messagebox.showinfo("Bilgi", "Müşteri başarıyla eklendi.")
-        
-        top = tk.Toplevel(self.root)
-        top.title("Yeni Müşteri Ekle")
-        
-        ttk.Label(top, text="Ad Soyad:").pack(pady=5)
-        entry_ad = ttk.Entry(top)
-        entry_ad.pack(pady=5)
-        
-        ttk.Label(top, text="Telefon:").pack(pady=5)
-        entry_tel = ttk.Entry(top)
-        entry_tel.pack(pady=5)
-        
-        ttk.Label(top, text="E-posta:").pack(pady=5)
-        entry_eposta = ttk.Entry(top)
-        entry_eposta.pack(pady=5)
-        
-        ttk.Button(top, text="Kaydet", command=save_musteri).pack(pady=10)
-    
-    def musteri_ata_kaydet(self, masa_id):
-        """Seçili müşteriyi masaya ata"""
-        musteri_adi = self.musteri_combobox.get()
-        
-        # Masa durumunu belirle
-        durum = 'dolu' if not musteri_adi else 'sabit_musteri'
-        
-        self.cursor.execute('''
-            UPDATE masalar 
-            SET musteri_adi = ?, durum = ?
-            WHERE masa_id = ?
-        ''', (musteri_adi if musteri_adi else None, durum, masa_id))
-        self.conn.commit()
-        
-        # Müşteri bilgilerini hemen yenile
-        self.load_musteri_bilgileri()
-        messagebox.showinfo("Bilgi", "Müşteri ataması kaydedildi.")
-        self.load_masalar()  # Ana masa listesini de güncelle
-    
-    def filter_urunler(self, event=None):
-        try:
-            kategori = self.kategori_var.get()
-            
-            # Combobox yapılandırması
-            if hasattr(self, 'urun_combobox'):
-                self.urun_combobox.config(
-                    foreground='black',
-                    background='white'
-                )
-            
-            if kategori == "Tüm Kategoriler":
-                self.cursor.execute('''
-                    SELECT u.urun_id, u.urun_adi, k.kategori_adi, u.fiyat 
-                    FROM urunler u
-                    LEFT JOIN kategoriler k ON u.kategori_id = k.kategori_id
-                    ORDER BY k.kategori_adi, u.urun_adi
-                ''')
-            else:
-                self.cursor.execute('''
-                    SELECT u.urun_id, u.urun_adi, k.kategori_adi, u.fiyat 
-                    FROM urunler u
-                    JOIN kategoriler k ON u.kategori_id = k.kategori_id
-                    WHERE k.kategori_adi = ?
-                    ORDER BY u.urun_adi
-                ''', (kategori,))
-            
-            urunler = self.cursor.fetchall()
-            display_list = [f"{u[1]} ({u[2]}) - {u[3]:.2f} TL" for u in urunler]
-            
-            if hasattr(self, 'urun_combobox'):
-                self.urun_combobox['values'] = display_list
-                if display_list:
-                    self.urun_combobox.current(0)
-                
-                self.urun_id_map = {display: u[0] for display, u in zip(display_list, urunler)}
-        except Exception as e:
-            print(f"Ürün filtreleme hatası: {str(e)}")
-    
-    def urun_ekle(self):
-        try:
-            selected_display = self.urun_var.get()
-            if not selected_display:
-                messagebox.showwarning("Uyarı", "Lütfen bir ürün seçin!")
-                return
-            
-            urun_id = self.urun_id_map[selected_display]
-            adet = self.adet_var.get()
-            
-            # Ürün bilgilerini al
-            self.cursor.execute("SELECT urun_adi, fiyat FROM urunler WHERE urun_id=?", (urun_id,))
-            urun_adi, fiyat = self.cursor.fetchone()
-            
-            # Treeview'a ekle
-            toplam = adet * fiyat
-            self.siparis_tree.insert('', 'end', values=(urun_adi, adet, f"{fiyat:.2f}", f"{toplam:.2f}", "Ekle"))
-            
-            # Toplamı güncelle
-            self.update_toplam()
-            
-            # Adisyon detayına ekle
-            if hasattr(self, 'active_adisyon_id'):
-                self.cursor.execute('''
-                    INSERT INTO adisyon_detay (adisyon_id, urun_id, adet, fiyat, eklenme_zamani, islem_tipi)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                ''', (self.active_adisyon_id, urun_id, adet, fiyat, datetime.now().strftime('%Y-%m-%d %H:%M:%S'), 'ekleme'))
-                self.conn.commit()
-            
-            # Masa son işlem zamanını güncelle
-            self.update_son_islem_zamani(self.current_masa_id)
-        except Exception as e:
-            messagebox.showerror("Hata", f"Ürün eklenirken hata oluştu: {str(e)}")
-    
-    def update_toplam(self):
-        toplam = 0.0
-        for item in self.siparis_tree.get_children():
-            values = self.siparis_tree.item(item)['values']
-            if values[4] == 'Ekle':  # Sadece eklenen ürünleri toplama dahil et
-                toplam += float(values[3])
-        
-        self.toplam_var.set(f"Toplam: {toplam:.2f} TL")
-    
-    def urun_sil(self):
-        try:
-            selected_item = self.siparis_tree.selection()
-            if not selected_item:
-                messagebox.showwarning("Uyarı", "Lütfen silmek istediğiniz ürünü seçin!")
-                return
-            
-            item = self.siparis_tree.item(selected_item)
-            urun_adi = item['values'][0]
-            adet = item['values'][1]
-            
-            # Ürün ID'sini al
-            self.cursor.execute("SELECT urun_id FROM urunler WHERE urun_adi=?", (urun_adi,))
-            urun_id = self.cursor.fetchone()[0]
-            
-            # Treeview'dan sil
-            self.siparis_tree.delete(selected_item)
-            
-            # Toplamı güncelle
-            self.update_toplam()
-            
-            # Adisyon detayına silme işlemini ekle
-            if hasattr(self, 'active_adisyon_id'):
-                self.cursor.execute('''
-                    INSERT INTO adisyon_detay (adisyon_id, urun_id, adet, fiyat, eklenme_zamani, islem_tipi)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                ''', (self.active_adisyon_id, urun_id, adet, 0, datetime.now().strftime('%Y-%m-%d %H:%M:%S'), 'silme'))
-                self.conn.commit()
-            
-            # Masa son işlem zamanını güncelle
-            self.update_son_islem_zamani(self.current_masa_id)
-        except Exception as e:
-            messagebox.showerror("Hata", f"Ürün silinirken hata oluştu: {str(e)}")
-    
-    def ara_odeme(self):
-        try:
-            if not hasattr(self, 'active_adisyon_id'):
-                messagebox.showwarning("Uyarı", "Aktif bir adisyon bulunamadı!")
-                return
-            
-            # Toplamı hesapla
-            toplam = 0.0
-            for item in self.siparis_tree.get_children():
-                values = self.siparis_tree.item(item)['values']
-                if values[4] == 'Ekle':  # Sadece eklenen ürünleri toplama dahil et
-                    toplam += float(values[3])
-            
-            if toplam <= 0:
-                messagebox.showwarning("Uyarı", "Ödenecek tutar bulunamadı!")
-                return
-
-            def save_odeme():
-                try:
-                    odeme_miktari = float(entry_odeme.get())
-                    if odeme_miktari <= 0:
-                        messagebox.showwarning("Uyarı", "Geçerli bir ödeme miktarı girin!")
-                        return
-                    
-                    # Ara ödemeyi kaydet
-                    self.cursor.execute('''
-                        INSERT INTO ara_odemeler (adisyon_id, odeme_miktari, odeme_zamani)
-                        VALUES (?, ?, ?)
-                    ''', (self.active_adisyon_id, odeme_miktari, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
-                    self.conn.commit()
-                    
-                    # Verileri yenile
-                    self.load_adisyon_detay(self.active_adisyon_id)  # Adisyon detaylarını yenile
-                    self.load_gecmis_adisyonlar()  # Geçmiş adisyonları yenile
-                    
-                    top.destroy()
-                    messagebox.showinfo("Bilgi", f"{odeme_miktari:.2f} TL ara ödeme kaydedildi.")
-                    
-                except ValueError:
-                    messagebox.showwarning("Uyarı", "Geçerli bir sayı girin!")
-            
-            top = tk.Toplevel(self.root)
-            top.title("Ara Ödeme")
-            
-            ttk.Label(top, text=f"Ödenecek Tutar: {toplam:.2f} TL").pack(pady=10)
-            ttk.Label(top, text="Ödeme Miktarı:").pack()
-            
-            entry_odeme = ttk.Entry(top)
-            entry_odeme.pack(pady=5)
-            
-            ttk.Button(top, text="Ödemeyi Kaydet", command=save_odeme).pack(pady=10)
-        except Exception as e:
-            messagebox.showerror("Hata", f"Ara ödeme sırasında hata oluştu: {str(e)}")
-    
-    def hesap_kapat(self):
-        try:
-            if not hasattr(self, 'active_adisyon_id'):
-                messagebox.showwarning("Uyarı", "Aktif bir adisyon bulunamadı!")
-                return
-            
-            # Toplamı hesapla
-            toplam = 0.0
-            for item in self.siparis_tree.get_children():
-                values = self.siparis_tree.item(item)['values']
-                if values[4] == 'Ekle':  # Sadece eklenen ürünleri toplama dahil et
-                    toplam += float(values[3])
-            
-            if toplam <= 0:
-                messagebox.showwarning("Uyarı", "Kapatılacak tutar bulunamadı!")
-                return
-            
-            # Adisyonu kapat
-            self.cursor.execute('''
-                UPDATE adisyonlar 
-                SET kapanis_zamani = ?, toplam_tutar = ?, odeme_durumu = 'kapali'
-                WHERE adisyon_id = ?
-            ''', (datetime.now().strftime('%Y-%m-%d %H:%M:%S'), toplam, self.active_adisyon_id))
-            self.conn.commit()
-            
-            # Masa durumunu güncelle
-            self.update_masa_durum(self.current_masa_id, 'bos')
-            self.update_son_islem_zamani(self.current_masa_id)
-            
-            # Treeview'ı temizle
-            for item in self.siparis_tree.get_children():
-                self.siparis_tree.delete(item)
-            
-            self.toplam_var.set("Toplam: 0.00 TL")
-            
-            # Aktif adisyonu temizle
-            del self.active_adisyon_id
-            
-            messagebox.showinfo("Bilgi", f"Hesap kapatıldı. Toplam: {toplam:.2f} TL")
-            self.masa_penceresi.destroy()
             self.load_masalar()
-        except Exception as e:
-            messagebox.showerror("Hata", f"Hesap kapatılırken hata oluştu: {str(e)}")
+            messagebox.showinfo("Başarılı", "Masa başarıyla silindi!")
     
-    def update_masa_durum(self, masa_id, durum):
-        self.cursor.execute('''
-            UPDATE masalar 
-            SET durum = ?
-            WHERE masa_id = ?
-        ''', (durum, masa_id))
-        self.conn.commit()
-    
-    def update_son_islem_zamani(self, masa_id):
-        self.cursor.execute('''
-            UPDATE masalar 
-            SET son_islem_zamani = ?
-            WHERE masa_id = ?
-        ''', (datetime.now().strftime('%Y-%m-%d %H:%M:%S'), masa_id))
-        self.conn.commit()
-    
-    def check_active_adisyon(self, masa_id):
-        # Masa için aktif adisyon var mı kontrol et
-        self.cursor.execute('''
-            SELECT adisyon_id FROM adisyonlar 
-            WHERE masa_id = ? AND odeme_durumu = 'acik'
-        ''', (masa_id,))
-        result = self.cursor.fetchone()
-        
-        if result:
-            self.active_adisyon_id = result[0]
-            # Adisyon detaylarını yükle
-            self.load_adisyon_detay(self.active_adisyon_id)
-        else:
-            # Yeni adisyon oluştur
-            self.cursor.execute('''
-                INSERT INTO adisyonlar (masa_id, baslangic_zamani)
-                VALUES (?, ?)
-            ''', (masa_id, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
-            self.conn.commit()
-            self.active_adisyon_id = self.cursor.lastrowid
-    
-    def load_adisyon_detay(self, adisyon_id):
-        # Önceki siparişleri temizle
-        for item in self.siparis_tree.get_children():
-            self.siparis_tree.delete(item)
-        
-        # Adisyon detaylarını yükle
-        self.cursor.execute('''
-            SELECT u.urun_adi, ad.adet, ad.fiyat, ad.islem_tipi
-            FROM adisyon_detay ad
-            JOIN urunler u ON ad.urun_id = u.urun_id
-            WHERE ad.adisyon_id = ?
-            ORDER BY ad.eklenme_zamani
-        ''', (adisyon_id,))
-        
-        toplam = 0.0
-        for urun_adi, adet, fiyat, islem_tipi in self.cursor.fetchall():
-            if islem_tipi == 'ekleme':
-                toplam_urun = adet * fiyat
-                toplam += toplam_urun
-                self.siparis_tree.insert('', 'end', values=(urun_adi, adet, f"{fiyat:.2f}", f"{toplam_urun:.2f}", "Ekle"))
-            elif islem_tipi == 'silme':
-                self.siparis_tree.insert('', 'end', values=(urun_adi, adet, "0.00", "0.00", "Sil"))
-        
-        self.toplam_var.set(f"Toplam: {toplam:.2f} TL")
-    
-    def load_gecmis_adisyonlar(self):
-        # Geçmiş adisyonlar için treeview oluştur
-        columns = ('tarih', 'toplam', 'durum')
-        self.gecmis_tree = ttk.Treeview(self.gecmis_frame, columns=columns, show='headings')
-        
-        self.gecmis_tree.heading('tarih', text='Tarih')
-        self.gecmis_tree.heading('toplam', text='Toplam')
-        self.gecmis_tree.heading('durum', text='Durum')
-        
-        self.gecmis_tree.column('tarih', width=200)
-        self.gecmis_tree.column('toplam', width=100, anchor='e')
-        self.gecmis_tree.column('durum', width=100, anchor='center')
-        
-        self.gecmis_tree.pack(fill='both', expand=True, padx=10, pady=10)
-        
-        # Detay gösterim alanı
-        self.detay_frame = ttk.Frame(self.gecmis_frame)
-        self.detay_frame.pack(fill='both', expand=True, padx=10, pady=10)
-        
-        # Geçmiş adisyonları yükle
-        self.cursor.execute('''
-            SELECT adisyon_id, baslangic_zamani, kapanis_zamani, toplam_tutar, odeme_durumu
-            FROM adisyonlar
-            WHERE masa_id = ?
-            ORDER BY baslangic_zamani DESC
-        ''', (self.current_masa_id,))
-        
-        for adisyon_id, baslangic, kapanis, toplam, durum in self.cursor.fetchall():
-            tarih = baslangic
-            if kapanis:
-                tarih = f"{baslangic} - {kapanis}"
-            
-            toplam_display = f"{toplam:.2f} TL" if toplam else "-"
-            self.gecmis_tree.insert('', 'end', values=(tarih, toplam_display, durum.capitalize()), iid=adisyon_id)
-        
-        # Tıklama olayı
-        self.gecmis_tree.bind('<<TreeviewSelect>>', self.show_adisyon_detay)
-    
-    def show_adisyon_detay(self, event):
-        # Önceki detayları temizle
-        for widget in self.detay_frame.winfo_children():
-            widget.destroy()
-        
-        selected = self.gecmis_tree.selection()
-        if not selected:
+    def masa_ac_pencere(self):
+        if not hasattr(self, 'secili_masa_id'):
+            messagebox.showwarning("Uyarı", "Lütfen bir masa seçin!")
             return
         
-        adisyon_id = selected[0]
+        self.masa_ac_window = tk.Toplevel(self.root)
+        self.masa_ac_window.title("Masa Aç")
+        self.masa_ac_window.geometry("400x300")
         
-        # Adisyon detaylarını al
-        self.cursor.execute('''
-            SELECT u.urun_adi, ad.adet, ad.fiyat, ad.eklenme_zamani, ad.islem_tipi
-            FROM adisyon_detay ad
-            JOIN urunler u ON ad.urun_id = u.urun_id
-            WHERE ad.adisyon_id = ?
-            ORDER BY ad.eklenme_zamani
-        ''', (adisyon_id,))
+        # Müşteri Seçimi
+        ttk.Label(self.masa_ac_window, text="Müşteri Seçin:").pack(pady=5)
         
-        detaylar = self.cursor.fetchall()
-        
-        if not detaylar:
-            ttk.Label(self.detay_frame, text="Bu adisyona ait detay bulunamadı.").pack()
-            return
-        
-        # Treeview oluştur
-        columns = ('zaman', 'islem', 'urun', 'adet', 'fiyat', 'toplam')
-        detay_tree = ttk.Treeview(self.detay_frame, columns=columns, show='headings')
-        
-        detay_tree.heading('zaman', text='Zaman')
-        detay_tree.heading('islem', text='İşlem')
-        detay_tree.heading('urun', text='Ürün')
-        detay_tree.heading('adet', text='Adet')
-        detay_tree.heading('fiyat', text='Birim Fiyat')
-        detay_tree.heading('toplam', text='Toplam')
-        
-        detay_tree.column('zaman', width=150)
-        detay_tree.column('islem', width=80, anchor='center')
-        detay_tree.column('urun', width=150)
-        detay_tree.column('adet', width=50, anchor='center')
-        detay_tree.column('fiyat', width=80, anchor='e')
-        detay_tree.column('toplam', width=80, anchor='e')
-        
-        detay_tree.pack(fill='both', expand=True)
-        
-        # Ara ödemeleri al
-        self.cursor.execute('''
-            SELECT odeme_miktari, odeme_zamani
-            FROM ara_odemeler
-            WHERE adisyon_id = ?
-            ORDER BY odeme_zamani
-        ''', (adisyon_id,))
-        
-        ara_odemeler = self.cursor.fetchall()
-        
-        # Detayları ekle
-        for urun_adi, adet, fiyat, zaman, islem_tipi in detaylar:
-            if islem_tipi == 'ekleme':
-                toplam = adet * fiyat
-                detay_tree.insert('', 'end', values=(
-                    zaman, 
-                    islem_tipi.capitalize(), 
-                    urun_adi, 
-                    adet, 
-                    f"{fiyat:.2f}", 
-                    f"{toplam:.2f}"
-                ))
-            elif islem_tipi == 'silme':
-                detay_tree.insert('', 'end', values=(
-                    zaman, 
-                    islem_tipi.capitalize(), 
-                    urun_adi, 
-                    adet, 
-                    "-", 
-                    "-"
-                ))
-        
-        # Ara ödemeleri ekle
-        for odeme_miktari, odeme_zamani in ara_odemeler:
-            detay_tree.insert('', 'end', values=(
-                odeme_zamani, 
-                "Ara Ödeme", 
-                "-", 
-                "-", 
-                "-", 
-                f"{odeme_miktari:.2f}"
-            ))
-    
-    def load_musteri_bilgileri(self):
-        # Önceki bilgileri temizle
-        for widget in self.musteri_frame.winfo_children():
-            widget.destroy()
-        
-        # Müşteri bilgilerini al
-        self.cursor.execute("SELECT musteri_adi FROM masalar WHERE masa_id=?", (self.current_masa_id,))
-        musteri_adi = self.cursor.fetchone()[0]
-        
-        if not musteri_adi:
-            ttk.Label(self.musteri_frame, text="Bu masa için müşteri bilgisi kayıtlı değil.").pack(pady=20)
-            return
-        
-        musteri_id, ad_soyad, telefon, eposta, kayit_tarihi = musteri
-        
-        # Bilgileri göster
-        info_frame = ttk.Frame(self.musteri_frame)
-        info_frame.pack(pady=10)
-        
-        ttk.Label(info_frame, text="Ad Soyad:", font=('Arial', 10, 'bold')).grid(row=0, column=0, sticky='e', padx=5, pady=5)
-        ttk.Label(info_frame, text=ad_soyad).grid(row=0, column=1, sticky='w', pady=5)
-        
-        ttk.Label(info_frame, text="Telefon:", font=('Arial', 10, 'bold')).grid(row=1, column=0, sticky='e', padx=5, pady=5)
-        ttk.Label(info_frame, text=telefon).grid(row=1, column=1, sticky='w', pady=5)
-        
-        ttk.Label(info_frame, text="E-posta:", font=('Arial', 10, 'bold')).grid(row=2, column=0, sticky='e', padx=5, pady=5)
-        ttk.Label(info_frame, text=eposta).grid(row=2, column=1, sticky='w', pady=5)
-        
-        ttk.Label(info_frame, text="Kayıt Tarihi:", font=('Arial', 10, 'bold')).grid(row=3, column=0, sticky='e', padx=5, pady=5)
-        ttk.Label(info_frame, text=kayit_tarihi).grid(row=3, column=1, sticky='w', pady=5)
-        
-        # Geçmiş adisyonlar
-        ttk.Label(self.musteri_frame, text="Geçmiş Adisyonlar", font=('Arial', 10, 'bold')).pack(pady=10)
-        
-        columns = ('tarih', 'masa', 'toplam')
-        musteri_adisyon_tree = ttk.Treeview(self.musteri_frame, columns=columns, show='headings')
-        
-        musteri_adisyon_tree.heading('tarih', text='Tarih')
-        musteri_adisyon_tree.heading('masa', text='Masa')
-        musteri_adisyon_tree.heading('toplam', text='Toplam')
-        
-        musteri_adisyon_tree.column('tarih', width=200)
-        musteri_adisyon_tree.column('masa', width=100)
-        musteri_adisyon_tree.column('toplam', width=100, anchor='e')
-        
-        musteri_adisyon_tree.pack(fill='both', expand=True, padx=10, pady=10)
-        
-        # Müşterinin geçmiş adisyonlarını al
-        self.cursor.execute('''
-            SELECT a.adisyon_id, a.baslangic_zamani, a.kapanis_zamani, a.toplam_tutar, m.masa_id, m.masa_adi
-            FROM adisyonlar a
-            JOIN masalar m ON a.masa_id = m.masa_id
-            WHERE m.musteri_adi = ? AND a.odeme_durumu = 'kapali'
-            ORDER BY a.baslangic_zamani DESC
-            LIMIT 20
-        ''', (musteri_adi,))
-        
-        for adisyon_id, baslangic, kapanis, toplam, masa_id, masa_adi in self.cursor.fetchall():
-            tarih = baslangic
-            if kapanis:
-                tarih = f"{baslangic} - {kapanis}"
-            
-            masa_text = f"Masa {masa_id}"
-            if masa_adi:
-                masa_text += f" ({masa_adi})"
-            
-            musteri_adisyon_tree.insert('', 'end', values=(
-                tarih, 
-                masa_text, 
-                f"{toplam:.2f} TL" if toplam else "-"
-            ))
-    
-    def create_urunler_tab(self):
-        # Üst butonlar
-        btn_frame = ttk.Frame(self.urunler_frame)
-        btn_frame.pack(pady=10)
-        
-        self.btn_urun_ekle = ttk.Button(btn_frame, text="Ürün Ekle", command=self.urun_ekle_form)
-        self.btn_urun_ekle.pack(side='left', padx=5)
-        
-        self.btn_urun_duzenle = ttk.Button(btn_frame, text="Ürün Düzenle", command=self.urun_duzenle)
-        self.btn_urun_duzenle.pack(side='left', padx=5)
-        
-        self.btn_urun_sil = ttk.Button(btn_frame, text="Ürün Sil", command=self.urun_sil_form)
-        self.btn_urun_sil.pack(side='left', padx=5)
-        
-        self.btn_kategori_ekle = ttk.Button(btn_frame, text="Kategori Ekle", command=self.kategori_ekle)
-        self.btn_kategori_ekle.pack(side='left', padx=5)
-        
-        # Ürün listesi
-        columns = ('id', 'urun_adi', 'kategori', 'fiyat')
-        self.urun_tree = ttk.Treeview(self.urunler_frame, columns=columns, show='headings')
-        
-        self.urun_tree.heading('id', text='ID')
-        self.urun_tree.heading('urun_adi', text='Ürün Adı')
-        self.urun_tree.heading('kategori', text='Kategori')
-        self.urun_tree.heading('fiyat', text='Fiyat')
-        
-        self.urun_tree.column('id', width=50, anchor='center')
-        self.urun_tree.column('urun_adi', width=200)
-        self.urun_tree.column('kategori', width=150)
-        self.urun_tree.column('fiyat', width=100, anchor='e')
-        
-        self.urun_tree.pack(fill='both', expand=True, padx=10, pady=10)
-        
-        # Ürünleri yükle
-        self.load_urunler()
-    
-    def load_urunler(self):
-        # Önceki ürünleri temizle
-        for item in self.urun_tree.get_children():
-            self.urun_tree.delete(item)
-        
-        # Ürünleri veritabanından al
-        self.cursor.execute('''
-            SELECT u.urun_id, u.urun_adi, k.kategori_adi, u.fiyat
-            FROM urunler u
-            LEFT JOIN kategoriler k ON u.kategori_id = k.kategori_id
-            ORDER BY k.kategori_adi, u.urun_adi
-        ''')
-        
-        for urun_id, urun_adi, kategori_adi, fiyat in self.cursor.fetchall():
-            self.urun_tree.insert('', 'end', values=(urun_id, urun_adi, kategori_adi if kategori_adi else "-", f"{fiyat:.2f}"))
-    
-    def urun_ekle_form(self):
-        def save_urun():
-            urun_adi = entry_urun_adi.get()
-            kategori = kategori_var.get()
-            fiyat = entry_fiyat.get()
-            
-            if not urun_adi or not fiyat:
-                messagebox.showwarning("Uyarı", "Ürün adı ve fiyat boş olamaz!")
-                return
-            
-            try:
-                fiyat = float(fiyat)
-                if fiyat <= 0:
-                    messagebox.showwarning("Uyarı", "Fiyat 0'dan büyük olmalıdır!")
-                    return
-            except ValueError:
-                messagebox.showwarning("Uyarı", "Geçerli bir fiyat girin!")
-                return
-            
-            # Kategori ID'sini al
-            kategori_id = None
-            if kategori != "Kategori Seçin":
-                self.cursor.execute("SELECT kategori_id FROM kategoriler WHERE kategori_adi=?", (kategori,))
-                result = self.cursor.fetchone()
-                if result:
-                    kategori_id = result[0]
-            
-            # Ürünü ekle
-            self.cursor.execute('''
-                INSERT INTO urunler (urun_adi, kategori_id, fiyat)
-                VALUES (?, ?, ?)
-            ''', (urun_adi, kategori_id, fiyat))
-            self.conn.commit()
-            
-            top.destroy()
-            self.load_urunler()
-            messagebox.showinfo("Bilgi", "Ürün başarıyla eklendi.")
-        
-        top = tk.Toplevel(self.root)
-        top.title("Yeni Ürün Ekle")
-        
-        ttk.Label(top, text="Ürün Adı:").pack(pady=5)
-        entry_urun_adi = ttk.Entry(top)
-        entry_urun_adi.pack(pady=5)
-        
-        # Kategorileri al
-        self.cursor.execute("SELECT kategori_adi FROM kategoriler")
-        kategoriler = ["Kategori Seçin"] + [k[0] for k in self.cursor.fetchall()]
-        
-        ttk.Label(top, text="Kategori:").pack(pady=5)
-        kategori_var = tk.StringVar()
-        kategori_var.set("Kategori Seçin")
-        kategori_menu = ttk.OptionMenu(top, kategori_var, *kategoriler)
-        kategori_menu.pack(pady=5)
-        
-        ttk.Label(top, text="Fiyat:").pack(pady=5)
-        entry_fiyat = ttk.Entry(top)
-        entry_fiyat.pack(pady=5)
-        
-        ttk.Button(top, text="Kaydet", command=save_urun).pack(pady=10)
-    
-    def urun_duzenle(self):
-        selected = self.urun_tree.selection()
-        if not selected:
-            messagebox.showwarning("Uyarı", "Lütfen düzenlemek istediğiniz ürünü seçin!")
-            return
-        
-        item = self.urun_tree.item(selected[0])
-        urun_id, urun_adi, kategori_adi, fiyat = item['values']
-        fiyat = float(fiyat)
-        
-        def save_changes():
-            new_urun_adi = entry_urun_adi.get()
-            new_kategori = kategori_var.get()
-            new_fiyat = entry_fiyat.get()
-            
-            if not new_urun_adi or not new_fiyat:
-                messagebox.showwarning("Uyarı", "Ürün adı ve fiyat boş olamaz!")
-                return
-            
-            try:
-                new_fiyat = float(new_fiyat)
-                if new_fiyat <= 0:
-                    messagebox.showwarning("Uyarı", "Fiyat 0'dan büyük olmalıdır!")
-                    return
-            except ValueError:
-                messagebox.showwarning("Uyarı", "Geçerli bir fiyat girin!")
-                return
-            
-            # Kategori ID'sini al
-            new_kategori_id = None
-            if new_kategori != "Kategori Seçin":
-                self.cursor.execute("SELECT kategori_id FROM kategoriler WHERE kategori_adi=?", (new_kategori,))
-                result = self.cursor.fetchone()
-                if result:
-                    new_kategori_id = result[0]
-            
-            # Ürünü güncelle
-            self.cursor.execute('''
-                UPDATE urunler
-                SET urun_adi = ?, kategori_id = ?, fiyat = ?
-                WHERE urun_id = ?
-            ''', (new_urun_adi, new_kategori_id, new_fiyat, urun_id))
-            self.conn.commit()
-            
-            top.destroy()
-            self.load_urunler()
-            messagebox.showinfo("Bilgi", "Ürün başarıyla güncellendi.")
-        
-        top = tk.Toplevel(self.root)
-        top.title("Ürün Düzenle")
-        
-        ttk.Label(top, text="Ürün Adı:").pack(pady=5)
-        entry_urun_adi = ttk.Entry(top)
-        entry_urun_adi.insert(0, urun_adi)
-        entry_urun_adi.pack(pady=5)
-        
-        # Kategorileri al
-        self.cursor.execute("SELECT kategori_adi FROM kategoriler")
-        kategoriler = ["Kategori Seçin"] + [k[0] for k in self.cursor.fetchall()]
-        
-        ttk.Label(top, text="Kategori:").pack(pady=5)
-        kategori_var = tk.StringVar()
-        kategori_var.set(kategori_adi if kategori_adi != "-" else "Kategori Seçin")
-        kategori_menu = ttk.OptionMenu(top, kategori_var, *kategoriler)
-        kategori_menu.pack(pady=5)
-        
-        ttk.Label(top, text="Fiyat:").pack(pady=5)
-        entry_fiyat = ttk.Entry(top)
-        entry_fiyat.insert(0, str(fiyat))
-        entry_fiyat.pack(pady=5)
-        
-        ttk.Button(top, text="Kaydet", command=save_changes).pack(pady=10)
-    
-    def urun_sil_form(self):
-        selected = self.urun_tree.selection()
-        if not selected:
-            messagebox.showwarning("Uyarı", "Lütfen silmek istediğiniz ürünü seçin!")
-            return
-        
-        item = self.urun_tree.item(selected[0])
-        urun_id, urun_adi, _, _ = item['values']
-        
-        if messagebox.askyesno("Onay", f"'{urun_adi}' adlı ürünü silmek istediğinize emin misiniz?"):
-            self.cursor.execute("DELETE FROM urunler WHERE urun_id=?", (urun_id,))
-            self.conn.commit()
-            self.load_urunler()
-            messagebox.showinfo("Bilgi", "Ürün başarıyla silindi.")
-    
-    def kategori_ekle(self):
-        def save_kategori():
-            kategori_adi = entry_kategori.get()
-            if kategori_adi:
-                try:
-                    self.cursor.execute("INSERT INTO kategoriler (kategori_adi) VALUES (?)", (kategori_adi,))
-                    self.conn.commit()
-                    top.destroy()
-                    messagebox.showinfo("Bilgi", "Kategori başarıyla eklendi.")
-                except sqlite3.IntegrityError:
-                    messagebox.showwarning("Uyarı", "Bu kategori zaten var!")
-            else:
-                messagebox.showwarning("Uyarı", "Kategori adı boş olamaz!")
-        
-        top = tk.Toplevel(self.root)
-        top.title("Yeni Kategori Ekle")
-        
-        ttk.Label(top, text="Kategori Adı:").pack(pady=5)
-        entry_kategori = ttk.Entry(top)
-        entry_kategori.pack(pady=5)
-        
-        ttk.Button(top, text="Kaydet", command=save_kategori).pack(pady=10)
-    
-    def create_musteriler_tab(self):
-        # Üst butonlar
-        btn_frame = ttk.Frame(self.musteriler_frame)
-        btn_frame.pack(pady=10)
-        
-        self.btn_musteri_ekle = ttk.Button(btn_frame, text="Müşteri Ekle", command=self.musteri_ekle)
-        self.btn_musteri_ekle.pack(side='left', padx=5)
-        
-        self.btn_musteri_duzenle = ttk.Button(btn_frame, text="Müşteri Düzenle", command=self.musteri_duzenle)
-        self.btn_musteri_duzenle.pack(side='left', padx=5)
-        
-        self.btn_musteri_sil = ttk.Button(btn_frame, text="Müşteri Sil", command=self.musteri_sil)
-        self.btn_musteri_sil.pack(side='left', padx=5)
-        
-        # Müşteri listesi
-        columns = ('id', 'ad_soyad', 'telefon', 'eposta', 'kayit_tarihi')
-        self.musteri_tree = ttk.Treeview(self.musteriler_frame, columns=columns, show='headings')
-        
-        self.musteri_tree.heading('id', text='ID')
-        self.musteri_tree.heading('ad_soyad', text='Ad Soyad')
-        self.musteri_tree.heading('telefon', text='Telefon')
-        self.musteri_tree.heading('eposta', text='E-posta')
-        self.musteri_tree.heading('kayit_tarihi', text='Kayıt Tarihi')
-        
-        self.musteri_tree.column('id', width=50, anchor='center')
-        self.musteri_tree.column('ad_soyad', width=150)
-        self.musteri_tree.column('telefon', width=100)
-        self.musteri_tree.column('eposta', width=150)
-        self.musteri_tree.column('kayit_tarihi', width=120)
-        
-        self.musteri_tree.pack(fill='both', expand=True, padx=10, pady=10)
+        self.musteri_combobox_masa = ttk.Combobox(self.masa_ac_window, state='readonly')
+        self.musteri_combobox_masa.pack(fill='x', padx=10, pady=5)
         
         # Müşterileri yükle
-        self.load_musteriler()
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT id, ad_soyad FROM musteriler ORDER BY ad_soyad")
+        musteriler = cursor.fetchall()
+        self.musteri_combobox_masa['values'] = [f"{id_} - {ad}" for id_, ad in musteriler]
+        
+        # Yeni Müşteri Butonu
+        ttk.Button(self.masa_ac_window, text="Yeni Müşteri Ekle", command=self.yeni_musteri_ekle).pack(pady=5)
+        
+        # Masa Aç Butonu
+        ttk.Button(self.masa_ac_window, text="Masayı Aç", command=self.masa_ac).pack(pady=10)
+    
+    def masa_ac(self):
+        masa_id = self.secili_masa_id
+        secili_musteri = self.musteri_combobox_masa.get()
+        
+        if not secili_musteri:
+            messagebox.showwarning("Uyarı", "Lütfen bir müşteri seçin veya yeni müşteri ekleyin!")
+            return
+        
+        musteri_id = int(secili_musteri.split(" - ")[0])
+        
+        cursor = self.conn.cursor()
+        cursor.execute("UPDATE masalar SET durum='dolu', musteri_id=?, acilis_zamani=? WHERE id=?", 
+                      (musteri_id, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), masa_id))
+        self.conn.commit()
+        
+        self.masa_ac_window.destroy()
+        self.load_masalar()
+        self.masa_sec(masa_id)
+        messagebox.showinfo("Başarılı", "Masa başarıyla açıldı!")
+    
+    def hesap_kapat_pencere(self):
+        if not hasattr(self, 'secili_masa_id'):
+            messagebox.showwarning("Uyarı", "Lütfen bir masa seçin!")
+            return
+        
+        masa_id = self.secili_masa_id
+        
+        # Adisyon bilgilerini al
+        cursor = self.conn.cursor()
+        cursor.execute('''
+            SELECT u.urun_adi, a.adet, u.fiyat, (a.adet * u.fiyat) as tutar
+            FROM adisyonlar a
+            JOIN urunler u ON a.urun_id = u.id
+            WHERE a.masa_id=? AND a.durum='aktif'
+        ''', (masa_id,))
+        
+        adisyonlar = cursor.fetchall()
+        
+        self.hesap_kapat_window = tk.Toplevel(self.root)
+        self.hesap_kapat_window.title("Hesap Kapat")
+        self.hesap_kapat_window.geometry("500x400")
+        
+        # Adisyon Listesi
+        adisyon_frame = ttk.LabelFrame(self.hesap_kapat_window, text="Adisyon")
+        adisyon_frame.pack(fill='both', expand=True, padx=10, pady=10)
+        
+        columns = ('urun', 'adet', 'fiyat', 'tutar')
+        self.adisyon_tree_hesap = ttk.Treeview(adisyon_frame, columns=columns, show='headings', height=10)
+        
+        self.adisyon_tree_hesap.heading('urun', text='Ürün')
+        self.adisyon_tree_hesap.heading('adet', text='Adet')
+        self.adisyon_tree_hesap.heading('fiyat', text='Birim Fiyat')
+        self.adisyon_tree_hesap.heading('tutar', text='Tutar')
+        
+        self.adisyon_tree_hesap.column('urun', width=150)
+        self.adisyon_tree_hesap.column('adet', width=50, anchor='center')
+        self.adisyon_tree_hesap.column('fiyat', width=100, anchor='e')
+        self.adisyon_tree_hesap.column('tutar', width=100, anchor='e')
+        
+        self.adisyon_tree_hesap.pack(fill='both', expand=True)
+        
+        # Toplam Tutar
+        toplam_tutar = 0
+        for urun_adi, adet, fiyat, tutar in adisyonlar:
+            self.adisyon_tree_hesap.insert('', 'end', values=(urun_adi, adet, f"{fiyat:.2f}", f"{tutar:.2f}"))
+            toplam_tutar += tutar
+        
+        toplam_frame = ttk.Frame(adisyon_frame)
+        toplam_frame.pack(fill='x', pady=5)
+        
+        ttk.Label(toplam_frame, text="Toplam Tutar:", font=('Arial', 10, 'bold')).pack(side='left', padx=5)
+        ttk.Label(toplam_frame, text=f"{toplam_tutar:.2f} TL", font=('Arial', 10, 'bold')).pack(side='right', padx=5)
+        
+        # Hesap Kapat Butonu
+        ttk.Button(self.hesap_kapat_window, text="Hesabı Kapat", command=lambda: self.hesap_kapat(masa_id, toplam_tutar)).pack(pady=10)
+    
+    def hesap_kapat(self, masa_id, toplam_tutar):
+        # Adisyon detaylarını al
+        cursor = self.conn.cursor()
+        cursor.execute('''
+            SELECT u.urun_adi, a.adet, u.fiyat, (a.adet * u.fiyat) as tutar
+            FROM adisyonlar a
+            JOIN urunler u ON a.urun_id = u.id
+            WHERE a.masa_id=? AND a.durum='aktif'
+        ''', (masa_id,))
+        
+        adisyon_detay = ""
+        for urun_adi, adet, fiyat, tutar in cursor.fetchall():
+            adisyon_detay += f"{urun_adi} x {adet} = {tutar:.2f} TL\n"
+        
+        # Müşteri bilgilerini al
+        cursor.execute("SELECT musteri_id FROM masalar WHERE id=?", (masa_id,))
+        musteri_id = cursor.fetchone()[0]
+        
+        # Geçmiş adisyonlara kaydet
+        cursor.execute('''
+            INSERT INTO gecmis_adisyonlar 
+            (masa_id, musteri_id, acilis_zamani, kapanis_zamani, toplam_tutar, adisyon_detay)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (
+            masa_id,
+            musteri_id,
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            toplam_tutar,
+            adisyon_detay
+        ))
+        
+        # Adisyonları pasif yap
+        cursor.execute("UPDATE adisyonlar SET durum='pasif' WHERE masa_id=?", (masa_id,))
+        
+        # Masayı boşalt
+        cursor.execute("UPDATE masalar SET durum='bos', musteri_id=NULL, acilis_zamani=NULL, toplam_tutar=0 WHERE id=?", (masa_id,))
+        
+        self.conn.commit()
+        
+        self.hesap_kapat_window.destroy()
+        self.load_masalar()
+        self.masa_sec(masa_id)
+        messagebox.showinfo("Başarılı", "Hesap başarıyla kapatıldı!")
+    
+    def yeni_musteri_ekle(self):
+        self.musteri_ekle_window = tk.Toplevel(self.masa_ac_window)
+        self.musteri_ekle_window.title("Yeni Müşteri Ekle")
+        self.musteri_ekle_window.geometry("400x300")
+        
+        # Müşteri Bilgileri
+        ttk.Label(self.musteri_ekle_window, text="Ad Soyad:").grid(row=0, column=0, padx=5, pady=5, sticky='e')
+        self.musteri_ad_soyad = ttk.Entry(self.musteri_ekle_window)
+        self.musteri_ad_soyad.grid(row=0, column=1, padx=5, pady=5)
+        
+        ttk.Label(self.musteri_ekle_window, text="Telefon:").grid(row=1, column=0, padx=5, pady=5, sticky='e')
+        self.musteri_telefon = ttk.Entry(self.musteri_ekle_window)
+        self.musteri_telefon.grid(row=1, column=1, padx=5, pady=5)
+        
+        ttk.Label(self.musteri_ekle_window, text="E-posta:").grid(row=2, column=0, padx=5, pady=5, sticky='e')
+        self.musteri_eposta = ttk.Entry(self.musteri_ekle_window)
+        self.musteri_eposta.grid(row=2, column=1, padx=5, pady=5)
+        
+        # Butonlar
+        button_frame = ttk.Frame(self.musteri_ekle_window)
+        button_frame.grid(row=3, column=0, columnspan=2, pady=10)
+        
+        ttk.Button(button_frame, text="Kaydet", command=self.musteri_ekle_kaydet).pack(side='left', padx=5)
+        ttk.Button(button_frame, text="İptal", command=self.musteri_ekle_window.destroy).pack(side='right', padx=5)
+    
+    def musteri_ekle_kaydet(self):
+        ad_soyad = self.musteri_ad_soyad.get().strip()
+        telefon = self.musteri_telefon.get().strip()
+        eposta = self.musteri_eposta.get().strip()
+        
+        if not ad_soyad:
+            messagebox.showerror("Hata", "Ad soyad alanı boş bırakılamaz!")
+            return
+        
+        cursor = self.conn.cursor()
+        cursor.execute('''
+            INSERT INTO musteriler (ad_soyad, telefon, eposta, kayit_tarihi)
+            VALUES (?, ?, ?, ?)
+        ''', (ad_soyad, telefon if telefon else None, eposta if eposta else None, 
+             datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+        
+        self.conn.commit()
+        
+        # Müşteri combobox'ını güncelle
+        cursor.execute("SELECT id, ad_soyad FROM musteriler ORDER BY ad_soyad")
+        musteriler = cursor.fetchall()
+        self.musteri_combobox_masa['values'] = [f"{id_} - {ad}" for id_, ad in musteriler]
+        
+        # Yeni eklenen müşteriyi seç
+        yeni_musteri_id = cursor.lastrowid
+        for i, (id_, ad) in enumerate(musteriler):
+            if id_ == yeni_musteri_id:
+                self.musteri_combobox_masa.current(i)
+                break
+        
+        self.musteri_ekle_window.destroy()
+        messagebox.showinfo("Başarılı", "Müşteri başarıyla eklendi!")
+    
+    def load_adisyon(self, masa_id):
+        # Adisyonu temizle
+        for item in self.adisyon_tree.get_children():
+            self.adisyon_tree.delete(item)
+        
+        cursor = self.conn.cursor()
+        cursor.execute('''
+            SELECT a.id, u.urun_adi, a.adet, u.fiyat, (a.adet * u.fiyat) as tutar
+            FROM adisyonlar a
+            JOIN urunler u ON a.urun_id = u.id
+            WHERE a.masa_id=? AND a.durum='aktif'
+        ''', (masa_id,))
+        
+        toplam_tutar = 0
+        for adisyon in cursor.fetchall():
+            adisyon_id, urun_adi, adet, fiyat, tutar = adisyon
+            self.adisyon_tree.insert('', 'end', values=(urun_adi, adet, f"{fiyat:.2f}", f"{tutar:.2f}"))
+            toplam_tutar += tutar
+        
+        self.toplam_tutar_label.config(text=f"Toplam: {toplam_tutar:.2f} TL")
+        
+        # Masadaki toplam tutarı güncelle
+        cursor.execute("UPDATE masalar SET toplam_tutar=? WHERE id=?", (toplam_tutar, masa_id))
+        self.conn.commit()
+    
+    def load_masa_gecmis(self, masa_id):
+        self.masa_gecmis_text.config(state='normal')
+        self.masa_gecmis_text.delete('1.0', 'end')
+        
+        cursor = self.conn.cursor()
+        cursor.execute('''
+            SELECT acilis_zamani, kapanis_zamani, toplam_tutar, adisyon_detay
+            FROM gecmis_adisyonlar
+            WHERE masa_id=?
+            ORDER BY kapanis_zamani DESC
+            LIMIT 5
+        ''', (masa_id,))
+        
+        for kayit in cursor.fetchall():
+            acilis, kapanis, tutar, detay = kayit
+            self.masa_gecmis_text.insert('end', f"Açılış: {acilis}\n")
+            self.masa_gecmis_text.insert('end', f"Kapanış: {kapanis}\n")
+            self.masa_gecmis_text.insert('end', f"Toplam: {tutar:.2f} TL\n")
+            self.masa_gecmis_text.insert('end', "-"*30 + "\n")
+        
+        self.masa_gecmis_text.config(state='disabled')
+    
+    def masa_ac(self):
+        masa_id = self.secili_masa_id
+        
+        cursor = self.conn.cursor()
+        cursor.execute("UPDATE masalar SET durum='dolu', acilis_zamani=? WHERE id=?", 
+                      (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), masa_id))
+        self.conn.commit()
+        
+        self.load_masalar()
+        self.masa_sec(masa_id)
+    
+    def hesap_kapat(self):
+        masa_id = self.secili_masa_id
+        
+        # Önce masanın adisyon bilgilerini al
+        cursor = self.conn.cursor()
+        cursor.execute('''
+            SELECT u.urun_adi, a.adet, u.fiyat, (a.adet * u.fiyat) as tutar
+            FROM adisyonlar a
+            JOIN urunler u ON a.urun_id = u.id
+            WHERE a.masa_id=? AND a.durum='aktif'
+        ''', (masa_id,))
+        
+        adisyon_detay = ""
+        toplam_tutar = 0
+        for urun_adi, adet, fiyat, tutar in cursor.fetchall():
+            adisyon_detay += f"{urun_adi} x {adet} = {tutar:.2f} TL\n"
+            toplam_tutar += tutar
+        
+        # Müşteri bilgilerini al
+        cursor.execute("SELECT musteri_id FROM masalar WHERE id=?", (masa_id,))
+        musteri_id = cursor.fetchone()[0]
+        
+        # Geçmiş adisyonlara kaydet
+        cursor.execute('''
+            INSERT INTO gecmis_adisyonlar 
+            (masa_id, musteri_id, acilis_zamani, kapanis_zamani, toplam_tutar, adisyon_detay)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (
+            masa_id,
+            musteri_id,
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            toplam_tutar,
+            adisyon_detay
+        ))
+        
+        # Adisyonları pasif yap
+        cursor.execute("UPDATE adisyonlar SET durum='pasif' WHERE masa_id=?", (masa_id,))
+        
+        # Masayı boşalt
+        cursor.execute("UPDATE masalar SET durum='bos', musteri_id=NULL, acilis_zamani=NULL, toplam_tutar=0 WHERE id=?", (masa_id,))
+        
+        self.conn.commit()
+        
+        self.load_masalar()
+        self.masa_sec(masa_id)
+    
+    def musteri_ata(self):
+        secili_musteri = self.musteri_combobox.get()
+        if not secili_musteri:
+            messagebox.showwarning("Uyarı", "Lütfen bir müşteri seçin!")
+            return
+        
+        musteri_id = int(secili_musteri.split(" - ")[0])
+        masa_id = self.secili_masa_id
+        
+        cursor = self.conn.cursor()
+        cursor.execute("UPDATE masalar SET musteri_id=? WHERE id=?", (musteri_id, masa_id))
+        self.conn.commit()
+        
+        self.masa_sec(masa_id)
+    
+    def urun_ekle(self):
+        secili_urun = self.urun_combobox.get()
+        if not secili_urun:
+            messagebox.showwarning("Uyarı", "Lütfen bir ürün seçin!")
+            return
+        
+        try:
+            adet = int(self.urun_adet_spinbox.get())
+        except ValueError:
+            messagebox.showerror("Hata", "Geçersiz adet!")
+            return
+        
+        if adet <= 0:
+            messagebox.showerror("Hata", "Adet 0'dan büyük olmalıdır!")
+            return
+        
+        urun_id = int(secili_urun.split(" - ")[0])
+        masa_id = self.secili_masa_id
+        
+        cursor = self.conn.cursor()
+        
+        # Aynı ürün zaten eklenmiş mi kontrol et
+        cursor.execute("SELECT id, adet FROM adisyonlar WHERE masa_id=? AND urun_id=? AND durum='aktif'", (masa_id, urun_id))
+        existing = cursor.fetchone()
+        
+        if existing:
+            # Var olan kaydı güncelle
+            new_adet = existing[1] + adet
+            cursor.execute("UPDATE adisyonlar SET adet=? WHERE id=?", (new_adet, existing[0]))
+        else:
+            # Yeni kayıt ekle
+            cursor.execute('''
+                INSERT INTO adisyonlar (masa_id, urun_id, adet, tarih)
+                VALUES (?, ?, ?, ?)
+            ''', (masa_id, urun_id, adet, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+        
+        self.conn.commit()
+        
+        # Adisyonu yenile
+        self.load_adisyon(masa_id)
+        
+        # Ürün adedini sıfırla
+        self.urun_adet_spinbox.set(1)
     
     def load_musteriler(self):
-        # Önceki müşterileri temizle
-        for item in self.musteri_tree.get_children():
-            self.musteri_tree.delete(item)
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT id, ad_soyad FROM musteriler ORDER BY ad_soyad")
+        musteriler = cursor.fetchall()
         
-        # Müşterileri veritabanından al
-        self.cursor.execute('''
-            SELECT musteri_id, ad_soyad, telefon, eposta, kayit_tarihi
-            FROM musteriler
-            ORDER BY ad_soyad
-        ''')
+        # Müşteri combobox'ını güncelle
+        self.musteri_combobox['values'] = [f"{id_} - {ad}" for id_, ad in musteriler]
         
-        for musteri_id, ad_soyad, telefon, eposta, kayit_tarihi in self.cursor.fetchall():
-            self.musteri_tree.insert('', 'end', values=(
-                musteri_id, 
-                ad_soyad, 
-                telefon if telefon else "-", 
-                eposta if eposta else "-", 
-                kayit_tarihi
-            ))
+        # Müşteri treeview'ını güncelle
+        self.musteriler_tree.delete(*self.musteriler_tree.get_children())
+        
+        cursor.execute("SELECT id, ad_soyad, telefon, eposta, kayit_tarihi FROM musteriler ORDER BY ad_soyad")
+        for musteri in cursor.fetchall():
+            self.musteriler_tree.insert('', 'end', values=musteri)
     
-    def musteri_ekle(self):
-        def save_musteri():
-            ad_soyad = entry_ad.get()
-            telefon = entry_tel.get()
-            eposta = entry_eposta.get()
-            
-            if not ad_soyad:
-                messagebox.showwarning("Uyarı", "Ad soyad boş olamaz!")
-                return
-            
-            self.cursor.execute('''
-                INSERT INTO musteriler (ad_soyad, telefon, eposta, kayit_tarihi)
-                VALUES (?, ?, ?, ?)
-            ''', (ad_soyad, telefon if telefon else None, eposta if eposta else None, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
-            self.conn.commit()
-            
-            top.destroy()
-            self.load_musteriler()
-            messagebox.showinfo("Bilgi", "Müşteri başarıyla eklendi.")
+    def load_urunler(self):
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT id, urun_adi FROM urunler ORDER BY urun_adi")
+        urunler = cursor.fetchall()
         
-        top = tk.Toplevel(self.root)
-        top.title("Yeni Müşteri Ekle")
+        # Ürün combobox'ını güncelle
+        self.urun_combobox['values'] = [f"{id_} - {ad}" for id_, ad in urunler]
         
-        ttk.Label(top, text="Ad Soyad:").pack(pady=5)
-        entry_ad = ttk.Entry(top)
-        entry_ad.pack(pady=5)
+        # Ürün treeview'ını güncelle
+        self.urunler_tree.delete(*self.urunler_tree.get_children())
         
-        ttk.Label(top, text="Telefon:").pack(pady=5)
-        entry_tel = ttk.Entry(top)
-        entry_tel.pack(pady=5)
+        cursor.execute("SELECT id, urun_adi, fiyat, kategori, stok FROM urunler ORDER BY urun_adi")
+        for urun in cursor.fetchall():
+            self.urunler_tree.insert('', 'end', values=urun)
+    
+    def create_musteriler_ui(self):
+        # Müşteri Listesi
+        musteriler_list_frame = ttk.Frame(self.musteriler_frame)
+        musteriler_list_frame.pack(fill='both', expand=True, padx=10, pady=10)
         
-        ttk.Label(top, text="E-posta:").pack(pady=5)
-        entry_eposta = ttk.Entry(top)
-        entry_eposta.pack(pady=5)
+        columns = ('id', 'ad_soyad', 'telefon', 'eposta', 'kayit_tarihi')
+        self.musteriler_tree = ttk.Treeview(musteriler_list_frame, columns=columns, show='headings', height=15)
         
-        ttk.Button(top, text="Kaydet", command=save_musteri).pack(pady=10)
+        self.musteriler_tree.heading('id', text='ID')
+        self.musteriler_tree.heading('ad_soyad', text='Ad Soyad')
+        self.musteriler_tree.heading('telefon', text='Telefon')
+        self.musteriler_tree.heading('eposta', text='E-posta')
+        self.musteriler_tree.heading('kayit_tarihi', text='Kayıt Tarihi')
+        
+        self.musteriler_tree.column('id', width=50, anchor='center')
+        self.musteriler_tree.column('ad_soyad', width=150)
+        self.musteriler_tree.column('telefon', width=120)
+        self.musteriler_tree.column('eposta', width=150)
+        self.musteriler_tree.column('kayit_tarihi', width=120)
+        
+        self.musteriler_tree.pack(side='left', fill='both', expand=True)
+        
+        scrollbar = ttk.Scrollbar(musteriler_list_frame, orient='vertical', command=self.musteriler_tree.yview)
+        scrollbar.pack(side='right', fill='y')
+        self.musteriler_tree.configure(yscrollcommand=scrollbar.set)
+        
+        # Müşteri İşlemleri
+        musteriler_islem_frame = ttk.Frame(self.musteriler_frame)
+        musteriler_islem_frame.pack(fill='x', padx=10, pady=5)
+        
+        ttk.Button(musteriler_islem_frame, text="Yeni Müşteri", command=self.yeni_musteri).pack(side='left', padx=5)
+        ttk.Button(musteriler_islem_frame, text="Müşteri Düzenle", command=self.musteri_duzenle).pack(side='left', padx=5)
+        ttk.Button(musteriler_islem_frame, text="Müşteri Sil", command=self.musteri_sil).pack(side='left', padx=5)
+    
+    def yeni_musteri(self):
+        self.musteri_duzenle_window = tk.Toplevel(self.root)
+        self.musteri_duzenle_window.title("Yeni Müşteri")
+        self.musteri_duzenle_window.geometry("400x300")
+        
+        # Müşteri Bilgileri
+        ttk.Label(self.musteri_duzenle_window, text="Ad Soyad:").grid(row=0, column=0, padx=5, pady=5, sticky='e')
+        self.musteri_ad_soyad_entry = ttk.Entry(self.musteri_duzenle_window, width=30)
+        self.musteri_ad_soyad_entry.grid(row=0, column=1, padx=5, pady=5)
+        
+        ttk.Label(self.musteri_duzenle_window, text="Telefon:").grid(row=1, column=0, padx=5, pady=5, sticky='e')
+        self.musteri_telefon_entry = ttk.Entry(self.musteri_duzenle_window, width=30)
+        self.musteri_telefon_entry.grid(row=1, column=1, padx=5, pady=5)
+        
+        ttk.Label(self.musteri_duzenle_window, text="E-posta:").grid(row=2, column=0, padx=5, pady=5, sticky='e')
+        self.musteri_eposta_entry = ttk.Entry(self.musteri_duzenle_window, width=30)
+        self.musteri_eposta_entry.grid(row=2, column=1, padx=5, pady=5)
+        
+        # Butonlar
+        button_frame = ttk.Frame(self.musteri_duzenle_window)
+        button_frame.grid(row=3, column=0, columnspan=2, pady=10)
+        
+        ttk.Button(button_frame, text="Kaydet", command=self.musteri_kaydet).pack(side='left', padx=5)
+        ttk.Button(button_frame, text="İptal", command=self.musteri_duzenle_window.destroy).pack(side='left', padx=5)
+        
+        # Yeni müşteri modunda olduğumuzu belirtmek için
+        self.musteri_duzenle_mode = "yeni"
+        self.musteri_id = None
     
     def musteri_duzenle(self):
-        selected = self.musteri_tree.selection()
+        selected = self.musteriler_tree.selection()
         if not selected:
             messagebox.showwarning("Uyarı", "Lütfen düzenlemek istediğiniz müşteriyi seçin!")
             return
         
-        item = self.musteri_tree.item(selected[0])
-        musteri_id, ad_soyad, telefon, eposta, _ = item['values']
+        item = self.musteriler_tree.item(selected[0])
+        musteri_id = item['values'][0]
         
-        def save_changes():
-            new_ad = entry_ad.get()
-            new_tel = entry_tel.get()
-            new_eposta = entry_eposta.get()
-            
-            if not new_ad:
-                messagebox.showwarning("Uyarı", "Ad soyad boş olamaz!")
-                return
-            
-            self.cursor.execute('''
-                UPDATE musteriler
-                SET ad_soyad = ?, telefon = ?, eposta = ?
-                WHERE musteri_id = ?
-            ''', (new_ad, new_tel if new_tel else None, new_eposta if new_eposta else None, musteri_id))
-            self.conn.commit()
-            
-            top.destroy()
-            self.load_musteriler()
-            messagebox.showinfo("Bilgi", "Müşteri başarıyla güncellendi.")
+        self.musteri_duzenle_window = tk.Toplevel(self.root)
+        self.musteri_duzenle_window.title("Müşteri Düzenle")
+        self.musteri_duzenle_window.geometry("400x300")
         
-        top = tk.Toplevel(self.root)
-        top.title("Müşteri Düzenle")
+        # Müşteri Bilgileri
+        ttk.Label(self.musteri_duzenle_window, text="Ad Soyad:").grid(row=0, column=0, padx=5, pady=5, sticky='e')
+        self.musteri_ad_soyad_entry = ttk.Entry(self.musteri_duzenle_window, width=30)
+        self.musteri_ad_soyad_entry.grid(row=0, column=1, padx=5, pady=5)
         
-        ttk.Label(top, text="Ad Soyad:").pack(pady=5)
-        entry_ad = ttk.Entry(top)
-        entry_ad.insert(0, ad_soyad)
-        entry_ad.pack(pady=5)
+        ttk.Label(self.musteri_duzenle_window, text="Telefon:").grid(row=1, column=0, padx=5, pady=5, sticky='e')
+        self.musteri_telefon_entry = ttk.Entry(self.musteri_duzenle_window, width=30)
+        self.musteri_telefon_entry.grid(row=1, column=1, padx=5, pady=5)
         
-        ttk.Label(top, text="Telefon:").pack(pady=5)
-        entry_tel = ttk.Entry(top)
-        entry_tel.insert(0, telefon if telefon != "-" else "")
-        entry_tel.pack(pady=5)
+        ttk.Label(self.musteri_duzenle_window, text="E-posta:").grid(row=2, column=0, padx=5, pady=5, sticky='e')
+        self.musteri_eposta_entry = ttk.Entry(self.musteri_duzenle_window, width=30)
+        self.musteri_eposta_entry.grid(row=2, column=1, padx=5, pady=5)
         
-        ttk.Label(top, text="E-posta:").pack(pady=5)
-        entry_eposta = ttk.Entry(top)
-        entry_eposta.insert(0, eposta if eposta != "-" else "")
-        entry_eposta.pack(pady=5)
+        # Butonlar
+        button_frame = ttk.Frame(self.musteri_duzenle_window)
+        button_frame.grid(row=3, column=0, columnspan=2, pady=10)
         
-        ttk.Button(top, text="Kaydet", command=save_changes).pack(pady=10)
+        ttk.Button(button_frame, text="Kaydet", command=self.musteri_kaydet).pack(side='left', padx=5)
+        ttk.Button(button_frame, text="İptal", command=self.musteri_duzenle_window.destroy).pack(side='left', padx=5)
+        
+        # Verileri yükle
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT ad_soyad, telefon, eposta FROM musteriler WHERE id=?", (musteri_id,))
+        musteri = cursor.fetchone()
+        
+        if musteri:
+            self.musteri_ad_soyad_entry.insert(0, musteri[0])
+            self.musteri_telefon_entry.insert(0, musteri[1] if musteri[1] else "")
+            self.musteri_eposta_entry.insert(0, musteri[2] if musteri[2] else "")
+        
+        # Düzenleme modunda olduğumuzu belirtmek için
+        self.musteri_duzenle_mode = "duzenle"
+        self.musteri_id = musteri_id
+    
+    def musteri_kaydet(self):
+        ad_soyad = self.musteri_ad_soyad_entry.get().strip()
+        telefon = self.musteri_telefon_entry.get().strip()
+        eposta = self.musteri_eposta_entry.get().strip()
+        
+        if not ad_soyad:
+            messagebox.showerror("Hata", "Ad soyad alanı boş bırakılamaz!")
+            return
+        
+        cursor = self.conn.cursor()
+        
+        if self.musteri_duzenle_mode == "yeni":
+            # Yeni müşteri ekle
+            cursor.execute('''
+                INSERT INTO musteriler (ad_soyad, telefon, eposta, kayit_tarihi)
+                VALUES (?, ?, ?, ?)
+            ''', (ad_soyad, telefon if telefon else None, eposta if eposta else None, 
+                 datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+        else:
+            # Müşteri güncelle
+            cursor.execute('''
+                UPDATE musteriler 
+                SET ad_soyad=?, telefon=?, eposta=?
+                WHERE id=?
+            ''', (ad_soyad, telefon if telefon else None, eposta if eposta else None, self.musteri_id))
+        
+        self.conn.commit()
+        
+        # Müşteri listesini yenile
+        self.load_musteriler()
+        
+        # Pencereyi kapat
+        self.musteri_duzenle_window.destroy()
+        
+        messagebox.showinfo("Başarılı", "Müşteri bilgileri kaydedildi!")
     
     def musteri_sil(self):
-        selected = self.musteri_tree.selection()
+        selected = self.musteriler_tree.selection()
         if not selected:
             messagebox.showwarning("Uyarı", "Lütfen silmek istediğiniz müşteriyi seçin!")
             return
         
-        item = self.musteri_tree.item(selected[0])
-        musteri_id, ad_soyad, _, _, _ = item['values']
+        item = self.musteriler_tree.item(selected[0])
+        musteri_id = item['values'][0]
+        ad_soyad = item['values'][1]
         
-        # Müşterinin aktif adisyonu var mı kontrol et
-        self.cursor.execute('''
-            SELECT COUNT(*) FROM masalar WHERE musteri_adi = ?
-        ''', (ad_soyad,))
-        count = self.cursor.fetchone()[0]
+        # Müşterinin masalarda kullanılıp kullanılmadığını kontrol et
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM masalar WHERE musteri_id=?", (musteri_id,))
+        count = cursor.fetchone()[0]
         
         if count > 0:
-            messagebox.showwarning("Uyarı", "Bu müşteriye ait aktif masa bulunuyor. Önce masalardaki müşteri bilgisini kaldırın.")
+            messagebox.showerror("Hata", "Bu müşteri bir masada kullanılıyor. Önce müşteriyi masalardan çıkarmalısınız!")
             return
         
         if messagebox.askyesno("Onay", f"'{ad_soyad}' adlı müşteriyi silmek istediğinize emin misiniz?"):
-            self.cursor.execute("DELETE FROM musteriler WHERE musteri_id=?", (musteri_id,))
+            cursor.execute("DELETE FROM musteriler WHERE id=?", (musteri_id,))
             self.conn.commit()
+            
             self.load_musteriler()
-            messagebox.showinfo("Bilgi", "Müşteri başarıyla silindi.")
+            messagebox.showinfo("Başarılı", "Müşteri silindi!")
     
-    def create_raporlar_tab(self):
-        # Rapor tarih aralığı
-        date_frame = ttk.Frame(self.raporlar_frame)
-        date_frame.pack(pady=10)
+    def create_urunler_ui(self):
+        # Ürün Listesi
+        urunler_list_frame = ttk.Frame(self.urunler_frame)
+        urunler_list_frame.pack(fill='both', expand=True, padx=10, pady=10)
         
-        ttk.Label(date_frame, text="Başlangıç:").pack(side='left')
-        self.baslangic_tarih = ttk.Entry(date_frame, width=10)
-        self.baslangic_tarih.pack(side='left', padx=5)
-        self.baslangic_tarih.insert(0, datetime.now().strftime('%Y-%m-%d'))
+        columns = ('id', 'urun_adi', 'fiyat', 'kategori', 'stok')
+        self.urunler_tree = ttk.Treeview(urunler_list_frame, columns=columns, show='headings', height=15)
         
-        ttk.Label(date_frame, text="Bitiş:").pack(side='left', padx=5)
-        self.bitis_tarih = ttk.Entry(date_frame, width=10)
-        self.bitis_tarih.pack(side='left', padx=5)
-        self.bitis_tarih.insert(0, datetime.now().strftime('%Y-%m-%d'))
+        self.urunler_tree.heading('id', text='ID')
+        self.urunler_tree.heading('urun_adi', text='Ürün Adı')
+        self.urunler_tree.heading('fiyat', text='Fiyat')
+        self.urunler_tree.heading('kategori', text='Kategori')
+        self.urunler_tree.heading('stok', text='Stok')
         
-        ttk.Button(date_frame, text="Raporu Göster", command=self.load_rapor).pack(side='left', padx=5)
+        self.urunler_tree.column('id', width=50, anchor='center')
+        self.urunler_tree.column('urun_adi', width=200)
+        self.urunler_tree.column('fiyat', width=100, anchor='e')
+        self.urunler_tree.column('kategori', width=100)
+        self.urunler_tree.column('stok', width=80, anchor='center')
         
-        # Rapor treeview
-        columns = ('tarih', 'toplam', 'masa_sayisi', 'urun_sayisi')
-        self.rapor_tree = ttk.Treeview(self.raporlar_frame, columns=columns, show='headings')
+        self.urunler_tree.pack(side='left', fill='both', expand=True)
         
-        self.rapor_tree.heading('tarih', text='Tarih')
-        self.rapor_tree.heading('toplam', text='Toplam Ciro')
-        self.rapor_tree.heading('masa_sayisi', text='Masa Sayısı')
-        self.rapor_tree.heading('urun_sayisi', text='Ürün Sayısı')
+        scrollbar = ttk.Scrollbar(urunler_list_frame, orient='vertical', command=self.urunler_tree.yview)
+        scrollbar.pack(side='right', fill='y')
+        self.urunler_tree.configure(yscrollcommand=scrollbar.set)
         
-        self.rapor_tree.column('tarih', width=100)
-        self.rapor_tree.column('toplam', width=100, anchor='e')
-        self.rapor_tree.column('masa_sayisi', width=100, anchor='center')
-        self.rapor_tree.column('urun_sayisi', width=100, anchor='center')
+        # Ürün İşlemleri
+        urunler_islem_frame = ttk.Frame(self.urunler_frame)
+        urunler_islem_frame.pack(fill='x', padx=10, pady=5)
         
-        self.rapor_tree.pack(fill='both', expand=True, padx=10, pady=10)
-        
-        # Detay frame
-        self.rapor_detay_frame = ttk.Frame(self.raporlar_frame)
-        self.rapor_detay_frame.pack(fill='both', expand=True, padx=10, pady=10)
-        
-        # Başlangıçta bugünün raporunu yükle
-        self.load_rapor()
+        ttk.Button(urunler_islem_frame, text="Yeni Ürün", command=self.yeni_urun).pack(side='left', padx=5)
+        ttk.Button(urunler_islem_frame, text="Ürün Düzenle", command=self.urun_duzenle).pack(side='left', padx=5)
+        ttk.Button(urunler_islem_frame, text="Ürün Sil", command=self.urun_sil).pack(side='left', padx=5)
     
-    def load_rapor(self):
-        # Önceki raporu temizle
-        for item in self.rapor_tree.get_children():
-            self.rapor_tree.delete(item)
+    def yeni_urun(self):
+        self.urun_duzenle_window = tk.Toplevel(self.root)
+        self.urun_duzenle_window.title("Yeni Ürün")
+        self.urun_duzenle_window.geometry("400x300")
         
-        # Detay frame'i temizle
-        for widget in self.rapor_detay_frame.winfo_children():
-            widget.destroy()
+        # Ürün Bilgileri
+        ttk.Label(self.urun_duzenle_window, text="Ürün Adı:").grid(row=0, column=0, padx=5, pady=5, sticky='e')
+        self.urun_adi_entry = ttk.Entry(self.urun_duzenle_window, width=30)
+        self.urun_adi_entry.grid(row=0, column=1, padx=5, pady=5)
         
-        baslangic = self.baslangic_tarih.get()
-        bitis = self.bitis_tarih.get()
+        ttk.Label(self.urun_duzenle_window, text="Fiyat:").grid(row=1, column=0, padx=5, pady=5, sticky='e')
+        self.urun_fiyat_entry = ttk.Entry(self.urun_duzenle_window, width=30)
+        self.urun_fiyat_entry.grid(row=1, column=1, padx=5, pady=5)
+        
+        ttk.Label(self.urun_duzenle_window, text="Kategori:").grid(row=2, column=0, padx=5, pady=5, sticky='e')
+        self.urun_kategori_entry = ttk.Entry(self.urun_duzenle_window, width=30)
+        self.urun_kategori_entry.grid(row=2, column=1, padx=5, pady=5)
+        
+        ttk.Label(self.urun_duzenle_window, text="Stok:").grid(row=3, column=0, padx=5, pady=5, sticky='e')
+        self.urun_stok_entry = ttk.Entry(self.urun_duzenle_window, width=30)
+        self.urun_stok_entry.grid(row=3, column=1, padx=5, pady=5)
+        self.urun_stok_entry.insert(0, "0")
+        
+        # Butonlar
+        button_frame = ttk.Frame(self.urun_duzenle_window)
+        button_frame.grid(row=4, column=0, columnspan=2, pady=10)
+        
+        ttk.Button(button_frame, text="Kaydet", command=self.urun_kaydet).pack(side='left', padx=5)
+        ttk.Button(button_frame, text="İptal", command=self.urun_duzenle_window.destroy).pack(side='left', padx=5)
+        
+        # Yeni ürün modunda olduğumuzu belirtmek için
+        self.urun_duzenle_mode = "yeni"
+        self.urun_id = None
+    
+    def urun_duzenle(self):
+        selected = self.urunler_tree.selection()
+        if not selected:
+            messagebox.showwarning("Uyarı", "Lütfen düzenlemek istediğiniz ürünü seçin!")
+            return
+        
+        item = self.urunler_tree.item(selected[0])
+        urun_id = item['values'][0]
+        
+        self.urun_duzenle_window = tk.Toplevel(self.root)
+        self.urun_duzenle_window.title("Ürün Düzenle")
+        self.urun_duzenle_window.geometry("400x300")
+        
+        # Ürün Bilgileri
+        ttk.Label(self.urun_duzenle_window, text="Ürün Adı:").grid(row=0, column=0, padx=5, pady=5, sticky='e')
+        self.urun_adi_entry = ttk.Entry(self.urun_duzenle_window, width=30)
+        self.urun_adi_entry.grid(row=0, column=1, padx=5, pady=5)
+        
+        ttk.Label(self.urun_duzenle_window, text="Fiyat:").grid(row=1, column=0, padx=5, pady=5, sticky='e')
+        self.urun_fiyat_entry = ttk.Entry(self.urun_duzenle_window, width=30)
+        self.urun_fiyat_entry.grid(row=1, column=1, padx=5, pady=5)
+        
+        ttk.Label(self.urun_duzenle_window, text="Kategori:").grid(row=2, column=0, padx=5, pady=5, sticky='e')
+        self.urun_kategori_entry = ttk.Entry(self.urun_duzenle_window, width=30)
+        self.urun_kategori_entry.grid(row=2, column=1, padx=5, pady=5)
+        
+        ttk.Label(self.urun_duzenle_window, text="Stok:").grid(row=3, column=0, padx=5, pady=5, sticky='e')
+        self.urun_stok_entry = ttk.Entry(self.urun_duzenle_window, width=30)
+        self.urun_stok_entry.grid(row=3, column=1, padx=5, pady=5)
+        
+        # Butonlar
+        button_frame = ttk.Frame(self.urun_duzenle_window)
+        button_frame.grid(row=4, column=0, columnspan=2, pady=10)
+        
+        ttk.Button(button_frame, text="Kaydet", command=self.urun_kaydet).pack(side='left', padx=5)
+        ttk.Button(button_frame, text="İptal", command=self.urun_duzenle_window.destroy).pack(side='left', padx=5)
+        
+        # Verileri yükle
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT urun_adi, fiyat, kategori, stok FROM urunler WHERE id=?", (urun_id,))
+        urun = cursor.fetchone()
+        
+        if urun:
+            self.urun_adi_entry.insert(0, urun[0])
+            self.urun_fiyat_entry.insert(0, str(urun[1]))
+            self.urun_kategori_entry.insert(0, urun[2] if urun[2] else "")
+            self.urun_stok_entry.insert(0, str(urun[3]))
+        
+        # Düzenleme modunda olduğumuzu belirtmek için
+        self.urun_duzenle_mode = "duzenle"
+        self.urun_id = urun_id
+    
+    def urun_kaydet(self):
+        urun_adi = self.urun_adi_entry.get().strip()
+        fiyat = self.urun_fiyat_entry.get().strip()
+        kategori = self.urun_kategori_entry.get().strip()
+        stok = self.urun_stok_entry.get().strip()
+        
+        if not urun_adi:
+            messagebox.showerror("Hata", "Ürün adı alanı boş bırakılamaz!")
+            return
         
         try:
-            baslangic_date = datetime.strptime(baslangic, '%Y-%m-%d')
-            bitis_date = datetime.strptime(bitis, '%Y-%m-%d')
-            
-            if baslangic_date > bitis_date:
-                messagebox.showwarning("Uyarı", "Başlangıç tarihi bitiş tarihinden büyük olamaz!")
-                return
+            fiyat = float(fiyat)
+            if fiyat <= 0:
+                raise ValueError
         except ValueError:
-            messagebox.showwarning("Uyarı", "Geçerli bir tarih formatı girin (YYYY-MM-DD)!")
+            messagebox.showerror("Hata", "Geçersiz fiyat değeri!")
             return
         
-        # Günlük raporları al
-        self.cursor.execute('''
-            SELECT 
-                DATE(a.kapanis_zamani) AS tarih,
-                SUM(a.toplam_tutar) AS toplam,
-                COUNT(DISTINCT a.masa_id) AS masa_sayisi,
-                SUM(ad.adet) AS urun_sayisi
+        try:
+            stok = int(stok)
+        except ValueError:
+            messagebox.showerror("Hata", "Geçersiz stok değeri!")
+            return
+        
+        cursor = self.conn.cursor()
+        
+        if self.urun_duzenle_mode == "yeni":
+            # Yeni ürün ekle
+            cursor.execute('''
+                INSERT INTO urunler (urun_adi, fiyat, kategori, stok)
+                VALUES (?, ?, ?, ?)
+            ''', (urun_adi, fiyat, kategori if kategori else None, stok))
+        else:
+            # Ürün güncelle
+            cursor.execute('''
+                UPDATE urunler 
+                SET urun_adi=?, fiyat=?, kategori=?, stok=?
+                WHERE id=?
+            ''', (urun_adi, fiyat, kategori if kategori else None, stok, self.urun_id))
+        
+        self.conn.commit()
+        
+        # Ürün listesini yenile
+        self.load_urunler()
+        
+        # Pencereyi kapat
+        self.urun_duzenle_window.destroy()
+        
+        messagebox.showinfo("Başarılı", "Ürün bilgileri kaydedildi!")
+    
+    def urun_sil(self):
+        selected = self.urunler_tree.selection()
+        if not selected:
+            messagebox.showwarning("Uyarı", "Lütfen silmek istediğiniz ürünü seçin!")
+            return
+        
+        item = self.urunler_tree.item(selected[0])
+        urun_id = item['values'][0]
+        urun_adi = item['values'][1]
+        
+        # Ürünün adisyonlarda kullanılıp kullanılmadığını kontrol et
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM adisyonlar WHERE urun_id=?", (urun_id,))
+        count = cursor.fetchone()[0]
+        
+        if count > 0:
+            messagebox.showerror("Hata", "Bu ürün adisyonlarda kullanılıyor. Önce ürünü adisyonlardan çıkarmalısınız!")
+            return
+        
+        if messagebox.askyesno("Onay", f"'{urun_adi}' adlı ürünü silmek istediğinize emin misiniz?"):
+            cursor.execute("DELETE FROM urunler WHERE id=?", (urun_id,))
+            self.conn.commit()
+            
+            self.load_urunler()
+            messagebox.showinfo("Başarılı", "Ürün silindi!")
+    
+    def create_raporlar_ui(self):
+        # Rapor Seçenekleri
+        rapor_secim_frame = ttk.LabelFrame(self.raporlar_frame, text="Rapor Seçenekleri")
+        rapor_secim_frame.pack(fill='x', padx=10, pady=10)
+        
+        ttk.Label(rapor_secim_frame, text="Rapor Türü:").grid(row=0, column=0, padx=5, pady=5, sticky='w')
+        self.rapor_turu = tk.StringVar()
+        self.rapor_turu.set("gunluk")
+        
+        ttk.Radiobutton(rapor_secim_frame, text="Günlük Rapor", variable=self.rapor_turu, value="gunluk").grid(row=0, column=1, padx=5, pady=5, sticky='w')
+        ttk.Radiobutton(rapor_secim_frame, text="Tarih Aralığı Raporu", variable=self.rapor_turu, value="tarih_araligi").grid(row=0, column=2, padx=5, pady=5, sticky='w')
+        
+        # Tarih Seçimi
+        self.tarih_secim_frame = ttk.Frame(rapor_secim_frame)
+        self.tarih_secim_frame.grid(row=1, column=0, columnspan=3, padx=5, pady=5, sticky='we')
+        
+        ttk.Label(self.tarih_secim_frame, text="Tarih:").pack(side='left', padx=5)
+        self.rapor_tarih = ttk.Entry(self.tarih_secim_frame, width=12)
+        self.rapor_tarih.pack(side='left', padx=5)
+        self.rapor_tarih.insert(0, datetime.now().strftime("%Y-%m-%d"))
+        
+        ttk.Label(self.tarih_secim_frame, text="Başlangıç Tarihi:").pack(side='left', padx=5)
+        self.baslangic_tarih = ttk.Entry(self.tarih_secim_frame, width=12)
+        self.baslangic_tarih.pack(side='left', padx=5)
+        self.baslangic_tarih.insert(0, datetime.now().strftime("%Y-%m-%d"))
+        
+        ttk.Label(self.tarih_secim_frame, text="Bitiş Tarihi:").pack(side='left', padx=5)
+        self.bitis_tarih = ttk.Entry(self.tarih_secim_frame, width=12)
+        self.bitis_tarih.pack(side='left', padx=5)
+        self.bitis_tarih.insert(0, datetime.now().strftime("%Y-%m-%d"))
+        
+        # Rapor Butonları
+        rapor_buton_frame = ttk.Frame(rapor_secim_frame)
+        rapor_buton_frame.grid(row=2, column=0, columnspan=3, padx=5, pady=5)
+        
+        ttk.Button(rapor_buton_frame, text="Rapor Oluştur", command=self.rapor_olustur).pack(side='left', padx=5)
+        ttk.Button(rapor_buton_frame, text="Raporu Kaydet", command=self.rapor_kaydet).pack(side='left', padx=5)
+        
+        # Rapor Görüntüleme
+        rapor_goruntule_frame = ttk.LabelFrame(self.raporlar_frame, text="Rapor")
+        rapor_goruntule_frame.pack(fill='both', expand=True, padx=10, pady=10)
+        
+        self.rapor_text = tk.Text(rapor_goruntule_frame, wrap='word', state='disabled')
+        self.rapor_text.pack(fill='both', expand=True, padx=5, pady=5)
+        
+        # Başlangıçta tarih aralığı alanlarını gizle
+        self.baslangic_tarih.pack_forget()
+        self.bitis_tarih.pack_forget()
+        ttk.Label(self.tarih_secim_frame, text="Başlangıç Tarihi:").pack_forget()
+        ttk.Label(self.tarih_secim_frame, text="Bitiş Tarihi:").pack_forget()
+        
+        # Rapor türü değiştiğinde arayüzü güncelle
+        self.rapor_turu.trace('w', self.update_rapor_arayuz)
+    
+    def update_rapor_arayuz(self, *args):
+        if self.rapor_turu.get() == "gunluk":
+            self.rapor_tarih.pack(side='left', padx=5)
+            ttk.Label(self.tarih_secim_frame, text="Tarih:").pack(side='left', padx=5)
+            
+            self.baslangic_tarih.pack_forget()
+            self.bitis_tarih.pack_forget()
+            ttk.Label(self.tarih_secim_frame, text="Başlangıç Tarihi:").pack_forget()
+            ttk.Label(self.tarih_secim_frame, text="Bitiş Tarihi:").pack_forget()
+        else:
+            self.rapor_tarih.pack_forget()
+            ttk.Label(self.tarih_secim_frame, text="Tarih:").pack_forget()
+            
+            self.baslangic_tarih.pack(side='left', padx=5)
+            self.bitis_tarih.pack(side='left', padx=5)
+            ttk.Label(self.tarih_secim_frame, text="Başlangıç Tarihi:").pack(side='left', padx=5)
+            ttk.Label(self.tarih_secim_frame, text="Bitiş Tarihi:").pack(side='left', padx=5)
+    
+    def rapor_olustur(self):
+        rapor_turu = self.rapor_turu.get()
+        
+        if rapor_turu == "gunluk":
+            tarih = self.rapor_tarih.get()
+            try:
+                datetime.strptime(tarih, "%Y-%m-%d")
+            except ValueError:
+                messagebox.showerror("Hata", "Geçersiz tarih formatı! Lütfen YYYY-AA-GG formatında girin.")
+                return
+            
+            self.gunluk_rapor_olustur(tarih)
+        else:
+            baslangic = self.baslangic_tarih.get()
+            bitis = self.bitis_tarih.get()
+            
+            try:
+                datetime.strptime(baslangic, "%Y-%m-%d")
+                datetime.strptime(bitis, "%Y-%m-%d")
+            except ValueError:
+                messagebox.showerror("Hata", "Geçersiz tarih formatı! Lütfen YYYY-AA-GG formatında girin.")
+                return
+            
+            if baslangic > bitis:
+                messagebox.showerror("Hata", "Başlangıç tarihi bitiş tarihinden büyük olamaz!")
+                return
+            
+            self.tarih_araligi_rapor_olustur(baslangic, bitis)
+    
+    def gunluk_rapor_olustur(self, tarih):
+        cursor = self.conn.cursor()
+        
+        # Toplam satış bilgileri
+        cursor.execute('''
+            SELECT COUNT(*) as masa_sayisi, 
+                   SUM(toplam_tutar) as toplam_ciro,
+                   AVG(toplam_tutar) as ortalama_ciro
+            FROM gecmis_adisyonlar
+            WHERE DATE(kapanis_zamani) = ?
+        ''', (tarih,))
+        
+        rapor_istatistik = cursor.fetchone()
+        masa_sayisi, toplam_ciro, ortalama_ciro = rapor_istatistik
+        
+        # Masa bazlı satışlar
+        cursor.execute('''
+            SELECT masa_id, COUNT(*) as islem_sayisi, 
+                   SUM(toplam_tutar) as toplam_tutar
+            FROM gecmis_adisyonlar
+            WHERE DATE(kapanis_zamani) = ?
+            GROUP BY masa_id
+            ORDER BY toplam_tutar DESC
+        ''', (tarih,))
+        
+        masa_bazli_satislar = cursor.fetchall()
+        
+        # Ürün bazlı satışlar
+        cursor.execute('''
+            SELECT u.urun_adi, SUM(a.adet) as toplam_adet, 
+                   SUM(a.adet * u.fiyat) as toplam_tutar
             FROM adisyonlar a
-            JOIN adisyon_detay ad ON a.adisyon_id = ad.adisyon_id
-            WHERE 
-                a.odeme_durumu = 'kapali' AND
-                ad.islem_tipi = 'ekleme' AND
-                DATE(a.kapanis_zamani) BETWEEN ? AND ?
-            GROUP BY DATE(a.kapanis_zamani)
-            ORDER BY DATE(a.kapanis_zamani)
+            JOIN urunler u ON a.urun_id = u.id
+            JOIN gecmis_adisyonlar g ON a.masa_id = g.masa_id
+            WHERE DATE(g.kapanis_zamani) = ? AND a.durum='pasif'
+            GROUP BY u.urun_adi
+            ORDER BY toplam_tutar DESC
+        ''', (tarih,))
+        
+        urun_bazli_satislar = cursor.fetchall()
+        
+        # Raporu oluştur
+        rapor_metni = f"GÜNLÜK RAPOR - {tarih}\n"
+        rapor_metni += "="*50 + "\n\n"
+        
+        rapor_metni += f"Toplam Masa Sayısı: {masa_sayisi if masa_sayisi else 0}\n"
+        rapor_metni += f"Toplam Ciro: {toplam_ciro:.2f} TL\n" if toplam_ciro else "Toplam Ciro: 0.00 TL\n"
+        rapor_metni += f"Ortalama Masa Cirosu: {ortalama_ciro:.2f} TL\n\n" if ortalama_ciro else "Ortalama Masa Cirosu: 0.00 TL\n\n"
+        
+        rapor_metni += "Masa Bazlı Satışlar:\n"
+        rapor_metni += "-"*50 + "\n"
+        for masa in masa_bazli_satislar:
+            masa_id, islem_sayisi, toplam_tutar = masa
+            rapor_metni += f"Masa {masa_id}: {islem_sayisi} işlem, Toplam: {toplam_tutar:.2f} TL\n"
+        
+        rapor_metni += "\nÜrün Bazlı Satışlar:\n"
+        rapor_metni += "-"*50 + "\n"
+        for urun in urun_bazli_satislar:
+            urun_adi, toplam_adet, toplam_tutar = urun
+            rapor_metni += f"{urun_adi}: {toplam_adet} adet, Toplam: {toplam_tutar:.2f} TL\n"
+        
+        # Raporu göster
+        self.rapor_text.config(state='normal')
+        self.rapor_text.delete('1.0', 'end')
+        self.rapor_text.insert('end', rapor_metni)
+        self.rapor_text.config(state='disabled')
+    
+    def tarih_araligi_rapor_olustur(self, baslangic, bitis):
+        cursor = self.conn.cursor()
+        
+        # Toplam satış bilgileri
+        cursor.execute('''
+            SELECT COUNT(*) as masa_sayisi, 
+                   SUM(toplam_tutar) as toplam_ciro,
+                   AVG(toplam_tutar) as ortalama_ciro
+            FROM gecmis_adisyonlar
+            WHERE DATE(kapanis_zamani) BETWEEN ? AND ?
         ''', (baslangic, bitis))
         
-        raporlar = self.cursor.fetchall()
+        rapor_istatistik = cursor.fetchone()
+        masa_sayisi, toplam_ciro, ortalama_ciro = rapor_istatistik
         
-        if not raporlar:
-            ttk.Label(self.rapor_detay_frame, text="Seçilen tarih aralığında rapor bulunamadı.").pack(pady=20)
-            return
+        # Günlük ciro
+        cursor.execute('''
+            SELECT DATE(kapanis_zamani) as tarih, 
+                   COUNT(*) as islem_sayisi,
+                   SUM(toplam_tutar) as gunluk_ciro
+            FROM gecmis_adisyonlar
+            WHERE DATE(kapanis_zamani) BETWEEN ? AND ?
+            GROUP BY DATE(kapanis_zamani)
+            ORDER BY DATE(kapanis_zamani)
+        ''', (baslangic, bitis))
         
-        for tarih, toplam, masa_sayisi, urun_sayisi in raporlar:
-            self.rapor_tree.insert('', 'end', values=(
-                tarih,
-                f"{toplam:.2f} TL" if toplam else "0.00 TL",
-                masa_sayisi,
-                urun_sayisi
-            ), iid=tarih)
+        gunluk_cirolar = cursor.fetchall()
         
-        # İlk raporun detayını göster
-        if raporlar:
-            self.show_rapor_detay(raporlar[0][0])
+        # Masa bazlı satışlar
+        cursor.execute('''
+            SELECT masa_id, COUNT(*) as islem_sayisi, 
+                   SUM(toplam_tutar) as toplam_tutar
+            FROM gecmis_adisyonlar
+            WHERE DATE(kapanis_zamani) BETWEEN ? AND ?
+            GROUP BY masa_id
+            ORDER BY toplam_tutar DESC
+        ''', (baslangic, bitis))
         
-        # Tıklama olayı
-        self.rapor_tree.bind('<<TreeviewSelect>>', lambda e: self.show_rapor_detay(self.rapor_tree.selection()[0]))
-    
-    def show_rapor_detay(self, tarih):
-        # Detay frame'i temizle
-        for widget in self.rapor_detay_frame.winfo_children():
-            widget.destroy()
+        masa_bazli_satislar = cursor.fetchall()
         
-        # Adisyonları al
-        self.cursor.execute('''
-            SELECT 
-                a.adisyon_id,
-                a.masa_id,
-                m.masa_adi,
-                a.toplam_tutar,
-                TIME(a.kapanis_zamani) AS saat
+        # Ürün bazlı satışlar
+        cursor.execute('''
+            SELECT u.urun_adi, SUM(a.adet) as toplam_adet, 
+                   SUM(a.adet * u.fiyat) as toplam_tutar
             FROM adisyonlar a
-            JOIN masalar m ON a.masa_id = m.masa_id
-            WHERE 
-                a.odeme_durumu = 'kapali' AND
-                DATE(a.kapanis_zamani) = ?
-            ORDER BY a.kapanis_zamani
-        ''', (tarih,))
+            JOIN urunler u ON a.urun_id = u.id
+            JOIN gecmis_adisyonlar g ON a.masa_id = g.masa_id
+            WHERE DATE(g.kapanis_zamani) BETWEEN ? AND ? AND a.durum='pasif'
+            GROUP BY u.urun_adi
+            ORDER BY toplam_tutar DESC
+        ''', (baslangic, bitis))
         
-        adisyonlar = self.cursor.fetchall()
+        urun_bazli_satislar = cursor.fetchall()
         
-        if not adisyonlar:
-            ttk.Label(self.rapor_detay_frame, text="Bu tarihe ait detay bulunamadı.").pack(pady=20)
+        # Raporu oluştur
+        rapor_metni = f"TARİH ARALIĞI RAPORU - {baslangic} / {bitis}\n"
+        rapor_metni += "="*50 + "\n\n"
+        
+        rapor_metni += f"Toplam Masa Sayısı: {masa_sayisi if masa_sayisi else 0}\n"
+        rapor_metni += f"Toplam Ciro: {toplam_ciro:.2f} TL\n" if toplam_ciro else "Toplam Ciro: 0.00 TL\n"
+        rapor_metni += f"Ortalama Masa Cirosu: {ortalama_ciro:.2f} TL\n\n" if ortalama_ciro else "Ortalama Masa Cirosu: 0.00 TL\n\n"
+        
+        rapor_metni += "Günlük Ciro:\n"
+        rapor_metni += "-"*50 + "\n"
+        for gun in gunluk_cirolar:
+            tarih, islem_sayisi, gunluk_ciro = gun
+            rapor_metni += f"{tarih}: {islem_sayisi} işlem, Toplam: {gunluk_ciro:.2f} TL\n"
+        
+        rapor_metni += "\nMasa Bazlı Satışlar:\n"
+        rapor_metni += "-"*50 + "\n"
+        for masa in masa_bazli_satislar:
+            masa_id, islem_sayisi, toplam_tutar = masa
+            rapor_metni += f"Masa {masa_id}: {islem_sayisi} işlem, Toplam: {toplam_tutar:.2f} TL\n"
+        
+        rapor_metni += "\nÜrün Bazlı Satışlar:\n"
+        rapor_metni += "-"*50 + "\n"
+        for urun in urun_bazli_satislar:
+            urun_adi, toplam_adet, toplam_tutar = urun
+            rapor_metni += f"{urun_adi}: {toplam_adet} adet, Toplam: {toplam_tutar:.2f} TL\n"
+        
+        # Raporu göster
+        self.rapor_text.config(state='normal')
+        self.rapor_text.delete('1.0', 'end')
+        self.rapor_text.insert('end', rapor_metni)
+        self.rapor_text.config(state='disabled')
+    
+    def rapor_kaydet(self):
+        rapor_metni = self.rapor_text.get("1.0", "end-1c")
+        if not rapor_metni.strip():
+            messagebox.showwarning("Uyarı", "Kaydedilecek rapor bulunamadı!")
             return
         
-        # Toplam bilgisi
-        toplam_frame = ttk.Frame(self.rapor_detay_frame)
-        toplam_frame.pack(fill='x', pady=5)
+        dosya_yolu = filedialog.asksaveasfilename(
+            defaultextension=".txt",
+            filetypes=[("Text Dosyası", "*.txt"), ("Tüm Dosyalar", "*.*")],
+            title="Raporu Kaydet"
+        )
         
-        toplam_tutar = sum(a[3] for a in adisyonlar)
-        ttk.Label(toplam_frame, text=f"Toplam Ciro: {toplam_tutar:.2f} TL", font=('Arial', 10, 'bold')).pack(side='left')
-        
-        # Adisyon listesi
-        list_frame = ttk.Frame(self.rapor_detay_frame)
-        list_frame.pack(fill='both', expand=True)
-        
-        columns = ('masa', 'saat', 'tutar')
-        detay_tree = ttk.Treeview(list_frame, columns=columns, show='headings')
-        
-        detay_tree.heading('masa', text='Masa')
-        detay_tree.heading('saat', text='Saat')
-        detay_tree.heading('tutar', text='Tutar')
-        
-        detay_tree.column('masa', width=150)
-        detay_tree.column('saat', width=100, anchor='center')
-        detay_tree.column('tutar', width=100, anchor='e')
-        
-        detay_tree.pack(fill='both', expand=True)
-        
-        for adisyon_id, masa_id, masa_adi, tutar, saat in adisyonlar:
-            masa_text = f"Masa {masa_id}"
-            if masa_adi:
-                masa_text += f" ({masa_adi})"
-            
-            detay_tree.insert('', 'end', values=(
-                masa_text,
-                saat,
-                f"{tutar:.2f} TL"
-            ), iid=adisyon_id)
-        
-        # Ürün satışları
-        ttk.Label(self.rapor_detay_frame, text="En Çok Satılan Ürünler", font=('Arial', 10, 'bold')).pack(pady=5)
-        
-        self.cursor.execute('''
-            SELECT 
-                u.urun_adi,
-                SUM(ad.adet) AS toplam_adet,
-                SUM(ad.adet * ad.fiyat) AS toplam_tutar
-            FROM adisyon_detay ad
-            JOIN urunler u ON ad.urun_id = u.urun_id
-            JOIN adisyonlar a ON ad.adisyon_id = a.adisyon_id
-            WHERE 
-                ad.islem_tipi = 'ekleme' AND
-                a.odeme_durumu = 'kapali' AND
-                DATE(a.kapanis_zamani) = ?
-            GROUP BY u.urun_adi
-            ORDER BY toplam_adet DESC
-            LIMIT 5
-        ''', (tarih,))
-        
-        urunler = self.cursor.fetchall()
-        
-        if urunler:
-            urun_frame = ttk.Frame(self.rapor_detay_frame)
-            urun_frame.pack(fill='x', pady=5)
-            
-            for i, (urun_adi, adet, tutar) in enumerate(urunler):
-                ttk.Label(urun_frame, text=f"{i+1}. {urun_adi}: {adet} adet ({tutar:.2f} TL)").pack(anchor='w')
-    
-    def load_initial_data(self):
-        # Başlangıçta bazı örnek veriler ekleyelim (tablolar boşsa)
-        self.cursor.execute("SELECT COUNT(*) FROM kategoriler")
-        if self.cursor.fetchone()[0] == 0:
-            kategoriler = ['SICAK KAHVE', 'SOĞUK KAHVE', 'SOĞUK İÇECEK', 'TATLI', 'FRAPPE', 'MILK SHAKE']
-            for kategori in kategoriler:
-                self.cursor.execute("INSERT INTO kategoriler (kategori_adi) VALUES (?)", (kategori,))
-            
-            urunler = [
-                ('LATTE', 'SICAK KAHVE', 110),
-                ('ESPRESSO', 'SICAK KAHVE', 120),
-                ('LATTE', 'SICAK KAHVE', 90),
-                ('ICE WHITE MOCCA', 'SOĞUK KAHVE', 120),
-                ('SU', 'SOĞUK İÇECEK', 20),
-                ('SAN SEBASTİAN', 'TATLI', 80),
-                ('KARAMELLI FRAPPE', 'FRAPPE', 100),
-                ('KIRMIZI ORMAN', 'MILK SHAKE', 120)
-            ]
-            
-            for urun_adi, kategori_adi, fiyat in urunler:
-                self.cursor.execute("SELECT kategori_id FROM kategoriler WHERE kategori_adi=?", (kategori_adi,))
-                kategori_id = self.cursor.fetchone()[0]
-                self.cursor.execute("INSERT INTO urunler (urun_adi, kategori_id, fiyat) VALUES (?, ?, ?)", 
-                                  (urun_adi, kategori_id, fiyat))
-            
-            self.conn.commit()
-        
-        # Örnek masalar ekleyelim
-        self.cursor.execute("SELECT COUNT(*) FROM masalar")
-        if self.cursor.fetchone()[0] == 0:
-            for i in range(1, 11):
-                self.cursor.execute("INSERT INTO masalar (masa_adi) VALUES (?)", (f"Masa {i}",))
-            
-            self.conn.commit()
-    
-    def __del__(self):
-        if hasattr(self, 'conn'):
-            self.conn.close()
+        if dosya_yolu:
+            try:
+                with open(dosya_yolu, 'w', encoding='utf-8') as dosya:
+                    dosya.write(rapor_metni)
+                messagebox.showinfo("Başarılı", "Rapor başarıyla kaydedildi!")
+            except Exception as e:
+                messagebox.showerror("Hata", f"Rapor kaydedilirken hata oluştu:\n{str(e)}")
 
 if __name__ == "__main__":
     root = tk.Tk()
-    app = KafeAdisyon(root)
+    app = CafeAdisyonProgrami(root)
     root.mainloop()
