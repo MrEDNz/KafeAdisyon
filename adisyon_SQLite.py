@@ -15,7 +15,7 @@ class CafeAdisyonProgrami:
     def __init__(self, root):
         self.root = root
         self.root.title("Kafe Adisyon Programı")
-        self.root.geometry("1200x800")
+        self.root.geometry("1200x730")
         self.root.state('zoomed')
         
         # SQLite datetime dönüşümlerini kaydet
@@ -77,28 +77,32 @@ class CafeAdisyonProgrami:
         
         tk.Button(
             yonetim_frame, 
-            text="Ürün Yönetimi", 
+            text="Ürün Yönetimi",
+            relief=tk.GROOVE, 
             command=self.urun_yonetimi,
             **button_style
         ).pack(side=tk.LEFT, padx=10, pady=5)
         
         tk.Button(
             yonetim_frame, 
-            text="Masa Yönetimi", 
+            text="Masa Yönetimi",
+            relief=tk.GROOVE, 
             command=self.masa_yonetimi,
             **button_style
         ).pack(side=tk.LEFT, padx=10, pady=5)
         
         tk.Button(
             yonetim_frame, 
-            text="Personel Yönetimi", 
+            text="Personel Yönetimi",
+            relief=tk.GROOVE, 
             command=self.personel_yonetimi,
             **button_style
         ).pack(side=tk.LEFT, padx=10, pady=5)
         
         tk.Button(
             yonetim_frame, 
-            text="Raporlar", 
+            text="Raporlar",
+            relief=tk.GROOVE, 
             command=self.raporlari_ac,
             **button_style
         ).pack(side=tk.LEFT, padx=10, pady=5)
@@ -211,6 +215,7 @@ class CafeAdisyonProgrami:
                 text=btn_text,
                 width=18,
                 height=8,
+                relief=tk.RIDGE,  # 
                 command=lambda m=masa_no: self.masa_penceresi_ac(m),
                 bg=bg_color,
                 font=('Arial', 10),
