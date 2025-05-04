@@ -204,7 +204,7 @@ class CafeAdisyonProgrami:
                 bg_color = "lightgreen"
             else:
                 now = datetime.now()
-                son_islem_time = datetime.strptime(son_islem, "%Y-%m-%d %H:%M:%S") if son_islem else now
+                son_islem_time = son_islem if isinstance(son_islem, datetime) else (datetime.strptime(son_islem, "%Y-%m-%d %H:%M:%S") if son_islem else now)
                 if (now - son_islem_time) > timedelta(minutes=30):
                     bg_color = "purple"
                 else:
@@ -366,7 +366,7 @@ class CafeAdisyonProgrami:
             
             toplam = 0.0
             for urun_ad, adet, fiyat, urun_toplam, tarih in cursor.fetchall():
-                formatted_tarih = datetime.strptime(tarih, "%Y-%m-%d %H:%M:%S").strftime("%d.%m.%Y %H:%M")
+                formatted_tarih = tarih.strftime("%d.%m.%Y %H:%M")  # Direkt formatlama
                 sepet_tree.insert("", tk.END, values=(
                     urun_ad, 
                     adet, 
@@ -383,7 +383,10 @@ class CafeAdisyonProgrami:
         
         # Siparişleri ilk yükleme
         siparisleri_yukle()
-        
+    
+        def adapt_datetime(self, dt):
+            return dt.strftime("%Y-%m-%d %H:%M:%S")  # SQLite'ın anlayacağı formatta tarih
+
         # Sepete ekle butonu
         def sepete_ekle():
             urun = urun_combobox.get()
@@ -408,16 +411,16 @@ class CafeAdisyonProgrami:
             # Siparişi veritabanına ekle (Python 3.12+ uyumlu)
             tarih = datetime.now()
             cursor.execute('''
-            INSERT INTO siparisler (masa_no, urun_id, adet, tarih)
-            VALUES (?, ?, ?, ?)
-            ''', (masa_no, urun_id, adet, adapt_datetime(tarih)))
-            
+                INSERT INTO siparisler (masa_no, urun_id, adet, tarih)
+                VALUES (?, ?, ?, ?)
+            ''', (masa_no, urun_id, adet, tarih.strftime("%Y-%m-%d %H:%M:%S")))  # Direkt formatlama
+
             # Masayı dolu olarak işaretle ve son işlem tarihini güncelle
             cursor.execute('''
-            UPDATE masalar 
-            SET durum='Dolu', son_islem_tarihi=?
-            WHERE masa_no=?
-            ''', (adapt_datetime(tarih), masa_no))
+                UPDATE masalar 
+                SET durum='Dolu', son_islem_tarihi=?
+                WHERE masa_no=?
+            ''', (tarih.strftime("%Y-%m-%d %H:%M:%S"), masa_no))  # Sadece 2 parametre: tarih ve masa_no
             
             self.conn.commit()
             
@@ -771,6 +774,58 @@ class CafeAdisyonProgrami:
         # Ürünleri yükle
         self.urunleri_yukle(urun_tree)
         
+        def kategori_sil(self):
+            """ Kategori silme penceresini açar """
+            # Pencere oluştur
+            sil_penceresi = tk.Toplevel()
+            sil_penceresi.title("Kategori Sil")
+            sil_penceresi.geometry("300x200")
+
+            # Kategori listesi
+            tk.Label(sil_penceresi, text="Silinecek Kategori:").pack(pady=5)
+            
+            self.lb_kategoriler = tk.Listbox(sil_penceresi)
+            self.lb_kategoriler.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+            
+            # Mevcut kategorileri yükle
+            self.cursor.execute("SELECT ad FROM kategoriler")
+            for kategori in self.cursor.fetchall():
+                self.lb_kategoriler.insert(tk.END, kategori[0])
+
+            # Sil butonu
+            tk.Button(sil_penceresi, text="SİL", command=self._kategori_sil_onayla, 
+                    bg="red", fg="white").pack(pady=10)
+
+        def _kategori_sil_onayla(self):
+            """ Seçili kategoriyi siler (öncesinde onay ister) """
+            secim = self.lb_kategoriler.curselection()
+            if not secim:
+                messagebox.showwarning("Uyarı", "Lütfen bir kategori seçin!")
+                return
+            
+            kategori_ad = self.lb_kategoriler.get(secim[0])
+            
+            # Kategoriye bağlı ürün var mı kontrol et
+            self.cursor.execute("SELECT COUNT(*) FROM urunler WHERE kategori_id=(SELECT id FROM kategoriler WHERE ad=?)", (kategori_ad,))
+            urun_sayisi = self.cursor.fetchone()[0]
+            
+            if urun_sayisi > 0:
+                messagebox.showerror("Hata", f"Bu kategoride {urun_sayisi} ürün var! Önce ürünleri silin.")
+                return
+            
+            # Onay iste
+            if not messagebox.askyesno("Onay", f"'{kategori_ad}' kategorisini silmek istediğinize emin misiniz?"):
+                return
+            
+            # Silme işlemi
+            try:
+                self.cursor.execute("DELETE FROM kategoriler WHERE ad=?", (kategori_ad,))
+                self.conn.commit()
+                messagebox.showinfo("Başarılı", "Kategori silindi!")
+                self.lb_kategoriler.delete(secim[0])  # Listeden kaldır
+            except Exception as e:
+                messagebox.showerror("Hata", f"Silme başarısız: {str(e)}")
+
         # Treeview seçim olayı
         def urun_sec(event):
             selected = urun_tree.selection()
