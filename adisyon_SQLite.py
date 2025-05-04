@@ -77,32 +77,28 @@ class CafeAdisyonProgrami:
         
         tk.Button(
             yonetim_frame, 
-            text="Ürün Yönetimi",
-            relief=tk.GROOVE, 
+            text="Ürün Yönetimi", 
             command=self.urun_yonetimi,
             **button_style
         ).pack(side=tk.LEFT, padx=10, pady=5)
         
         tk.Button(
             yonetim_frame, 
-            text="Masa Yönetimi",
-            relief=tk.GROOVE, 
+            text="Masa Yönetimi", 
             command=self.masa_yonetimi,
             **button_style
         ).pack(side=tk.LEFT, padx=10, pady=5)
         
         tk.Button(
             yonetim_frame, 
-            text="Personel Yönetimi",
-            relief=tk.GROOVE, 
+            text="Personel Yönetimi", 
             command=self.personel_yonetimi,
             **button_style
         ).pack(side=tk.LEFT, padx=10, pady=5)
         
         tk.Button(
             yonetim_frame, 
-            text="Raporlar",
-            relief=tk.GROOVE, 
+            text="Raporlar", 
             command=self.raporlari_ac,
             **button_style
         ).pack(side=tk.LEFT, padx=10, pady=5)
@@ -114,7 +110,7 @@ class CafeAdisyonProgrami:
     def create_tables(self):
         """Veritabanı tablolarını oluşturur"""
         cursor = self.conn.cursor()
-        
+
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS masalar (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -229,7 +225,7 @@ class CafeAdisyonProgrami:
             self.masalar_frame.grid_rowconfigure(row, weight=1)
             
             self.masa_buttons[masa_no] = btn
-    
+
     def masa_penceresi_ac(self, masa_no):
         masa_pencere = tk.Toplevel(self.root)
         masa_pencere.title(f"Masa {masa_no} - Adisyon")
@@ -304,7 +300,7 @@ class CafeAdisyonProgrami:
         if kategoriler:
             kategori_degisti(None)
         
-                # Sepet frame (Adisyon Detayı)
+        # Sepet frame
         sepet_frame = tk.LabelFrame(
             masa_pencere, 
             text="Adisyon Detayı", 
@@ -350,63 +346,7 @@ class CafeAdisyonProgrami:
         )
         toplam_label.pack(side=tk.BOTTOM, fill=tk.X, pady=5)
         
-        # BUTONLAR İÇİN YENİ FRAME
-        button_frame = tk.Frame(
-            masa_pencere,
-            bd=1,
-            relief=tk.GROOVE,
-            padx=5,
-            pady=5
-        )
-        button_frame.pack(fill=tk.X, padx=10, pady=(0, 5))
-        
-        # Buton stilleri
-        button_style = {
-            'width': 15,
-            'height': 1,
-            'font': ('Arial', 10)
-        }
-        
-        # Sipariş silme butonu
-        sil_btn = tk.Button(
-            button_frame, 
-            text="Seçileni Sil", 
-            command=lambda: self.siparis_sil(sepet_tree, masa_no, toplam_label),
-            **button_style
-        )
-        sil_btn.pack(side=tk.LEFT, padx=5, pady=2)
-        
-        # Adet güncelleme butonu
-        guncelle_btn = tk.Button(
-            button_frame, 
-            text="Adet Güncelle", 
-            command=lambda: self.adet_guncelle(sepet_tree, masa_no),
-            **button_style
-        )
-        guncelle_btn.pack(side=tk.LEFT, padx=5, pady=2)
-        
-        # İndirim butonu
-        indirim_btn = tk.Button(
-            button_frame, 
-            text="İndirim Yap", 
-            command=lambda: self.indirim_yap(sepet_tree, masa_no),
-            **button_style
-        )
-        indirim_btn.pack(side=tk.LEFT, padx=5, pady=2)
-        
-        # Hesap kapatma butonu
-        kapat_btn = tk.Button(
-            button_frame, 
-            text="Hesap Kapat", 
-            command=lambda: self.hesap_kapat(masa_no, masa_pencere, toplam_label),
-            **button_style
-        )
-        kapat_btn.pack(side=tk.RIGHT, padx=5, pady=2)
-        
-        # Aktif siparişleri yükle
-        self.siparisleri_yukle(sepet_tree, masa_no, toplam_label)
-        
-        # Aktif siparişleri yükle
+        # Siparişleri yükleme fonksiyonu (eksik olan fonksiyon)
         def siparisleri_yukle():
             for item in sepet_tree.get_children():
                 sepet_tree.delete(item)
@@ -436,12 +376,8 @@ class CafeAdisyonProgrami:
             # Masa bakiyesini ana ekranda güncelle
             self.load_masalar()
         
-        # Buton stilleri
-        button_style = {
-            'width': 15,
-            'height': 1,
-            'font': ('Arial', 10)
-        }
+        # Siparişleri ilk yükleme
+        siparisleri_yukle()
         
         # Sepete ekle butonu
         def sepete_ekle():
