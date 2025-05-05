@@ -435,7 +435,8 @@ class CafeAdisyonProgrami:
         
         ekle_btn = tk.Button(
             urun_frame, 
-            text="Sepete Ekle", 
+            text="Ekle",
+            relief=tk.GROOVE, 
             command=sepete_ekle,
             width=15
         )
@@ -521,7 +522,8 @@ class CafeAdisyonProgrami:
         
         guncelle_btn = tk.Button(
             sepet_frame, 
-            text="Adet Güncelle", 
+            text="Adet Güncelle",
+            relief=tk.GROOVE, 
             command=adet_guncelle,
             width=15
         )
@@ -585,11 +587,12 @@ class CafeAdisyonProgrami:
                 indirim_pencere.destroy()
                 messagebox.showinfo("Başarılı", "İndirim başarıyla uygulandı!")
             
-            tk.Button(indirim_pencere, text="İndirim Uygula", command=indirim_uygula).pack(pady=5)
+            tk.Button(indirim_pencere, text="İndirim Uygula", relief=tk.GROOVE, command=indirim_uygula).pack(pady=5)
         
         indirim_btn = tk.Button(
             sepet_frame, 
-            text="İndirim Yap", 
+            text="İndirim Yap",
+            relief=tk.GROOVE, 
             command=indirim_yap,
             width=15
         )
@@ -655,13 +658,15 @@ class CafeAdisyonProgrami:
             
             tk.Button(
                 odeme_pencere, 
-                text="Ödemeyi Tamamla", 
+                text="Ödemeyi Tamamla",
+                relief=tk.GROOVE, 
                 command=odemeyi_tamamla
             ).pack(pady=10)
         
         kapat_btn = tk.Button(
             sepet_frame, 
-            text="Hesap Kapat", 
+            text="Hesap Kapat",
+            relief=tk.GROOVE, 
             command=hesap_kapat,
             width=15
         )
@@ -697,7 +702,7 @@ class CafeAdisyonProgrami:
             except sqlite3.IntegrityError:
                 messagebox.showerror("Hata", "Bu kategori zaten var!")
         
-        tk.Button(kategori_frame, text="Kategori Ekle", command=kategori_ekle).grid(row=0, column=2, padx=5, pady=5)
+        tk.Button(kategori_frame, text="Kategori Ekle", relief=tk.GROOVE, command=kategori_ekle).grid(row=0, column=2, padx=5, pady=5)
         
         # Ürün yönetimi frame
         urun_frame = tk.LabelFrame(yonetim_pencere, text="Ürün Yönetimi", padx=5, pady=5)
@@ -718,7 +723,7 @@ class CafeAdisyonProgrami:
         form_frame.pack(side=tk.BOTTOM, fill=tk.X, pady=5)
         
         tk.Label(form_frame, text="Kategori:").grid(row=0, column=0, padx=5, pady=5)
-        kategori_combobox = ttk.Combobox(form_frame, state="readonly")
+        kategori_combobox = ttk.Combobox(form_frame, width=27, state="readonly")
         kategori_combobox.grid(row=0, column=1, padx=5, pady=5)
         
         tk.Label(form_frame, text="Ürün Adı:").grid(row=1, column=0, padx=5, pady=5)
@@ -737,7 +742,7 @@ class CafeAdisyonProgrami:
         btn_frame = tk.Frame(form_frame)
         btn_frame.grid(row=4, column=0, columnspan=2, pady=10)
         
-        tk.Button(btn_frame, text="Ekle", command=lambda: self.urun_ekle(
+        tk.Button(btn_frame, text="Ekle", relief=tk.GROOVE, command=lambda: self.urun_ekle(
             kategori_combobox.get(),
             urun_ad_entry.get(),
             urun_fiyat_entry.get(),
@@ -745,7 +750,7 @@ class CafeAdisyonProgrami:
             urun_tree
         )).pack(side=tk.LEFT, padx=5)
         
-        tk.Button(btn_frame, text="Güncelle", command=lambda: self.urun_guncelle(
+        tk.Button(btn_frame, text="Güncelle", relief=tk.GROOVE, command=lambda: self.urun_guncelle(
             urun_tree,
             kategori_combobox.get(),
             urun_ad_entry.get(),
@@ -753,9 +758,9 @@ class CafeAdisyonProgrami:
             urun_stok_entry.get()
         )).pack(side=tk.LEFT, padx=5)
         
-        tk.Button(btn_frame, text="Sil", command=lambda: self.urun_sil(urun_tree)).pack(side=tk.LEFT, padx=5)
+        tk.Button(btn_frame, text="Sil", relief=tk.GROOVE, command=lambda: self.urun_sil(urun_tree)).pack(side=tk.LEFT, padx=5)
         
-        tk.Button(btn_frame, text="Temizle", command=lambda: self.urun_form_temizle(
+        tk.Button(btn_frame, text="Temizle", relief=tk.GROOVE, command=lambda: self.urun_form_temizle(
             kategori_combobox,
             urun_ad_entry,
             urun_fiyat_entry,
@@ -1008,7 +1013,7 @@ class CafeAdisyonProgrami:
         form_frame.pack(side=tk.BOTTOM, fill=tk.X, padx=10, pady=10)
         
         tk.Label(form_frame, text="Masa No:").grid(row=0, column=0, padx=5, pady=5)
-        masa_no_entry = tk.Entry(form_frame, width=20)
+        masa_no_entry = tk.Entry(form_frame, width=23)
         masa_no_entry.grid(row=0, column=1, padx=5, pady=5)
         
         tk.Label(form_frame, text="Durum:").grid(row=1, column=0, padx=5, pady=5)
@@ -1020,21 +1025,21 @@ class CafeAdisyonProgrami:
         btn_frame = tk.Frame(form_frame)
         btn_frame.grid(row=2, column=0, columnspan=2, pady=10)
         
-        tk.Button(btn_frame, text="Ekle", command=lambda: self.masa_ekle(
+        tk.Button(btn_frame, text="Ekle", relief=tk.GROOVE, command=lambda: self.masa_ekle(
             masa_no_entry.get(),
             masa_durum_combobox.get(),
             masa_tree
-        )).pack(side=tk.LEFT, padx=5)
+        )).pack(side=tk.LEFT, padx=10)
         
-        tk.Button(btn_frame, text="Güncelle", command=lambda: self.masa_guncelle(
+        tk.Button(btn_frame, text="Güncelle", relief=tk.GROOVE, command=lambda: self.masa_guncelle(
             masa_tree,
             masa_no_entry.get(),
             masa_durum_combobox.get()
         )).pack(side=tk.LEFT, padx=5)
         
-        tk.Button(btn_frame, text="Sil", command=lambda: self.masa_sil(masa_tree)).pack(side=tk.LEFT, padx=5)
+        tk.Button(btn_frame, text="Sil", relief=tk.GROOVE, command=lambda: self.masa_sil(masa_tree)).pack(side=tk.LEFT, padx=5)
         
-        tk.Button(btn_frame, text="Temizle", command=lambda: self.masa_form_temizle(
+        tk.Button(btn_frame, text="Temizle", relief=tk.GROOVE, command=lambda: self.masa_form_temizle(
             masa_no_entry,
             masa_durum_combobox,
             masa_tree
@@ -1296,10 +1301,10 @@ class CafeAdisyonProgrami:
         rapor_pencere.geometry("800x600")
         
         # Rapor seçimi
-        rapor_frame = tk.LabelFrame(rapor_pencere, text="Rapor Seçimi", padx=5, pady=5)
+        rapor_frame = tk.LabelFrame(rapor_pencere, text="Rapor Seçimi", padx=0, pady=5)
         rapor_frame.pack(fill=tk.X, padx=10, pady=5)
         
-        tk.Label(rapor_frame, text="Rapor Türü:").grid(row=0, column=0, padx=5, pady=5)
+        tk.Label(rapor_frame, text="Rapor Türü:").grid(row=0, column=0, padx=0, pady=5)
         rapor_combobox = ttk.Combobox(rapor_frame, values=[
             "Günlük Satış Raporu",
             "Aylık Satış Raporu",
@@ -1324,13 +1329,13 @@ class CafeAdisyonProgrami:
         bitis_tarih_entry.insert(0, datetime.now().strftime("%Y-%m-%d"))
         
         # Rapor butonu
-        tk.Button(rapor_frame, text="Rapor Oluştur", command=lambda: self.rapor_olustur(
+        tk.Button(rapor_frame, text="Rapor Oluştur", relief=tk.GROOVE, command=lambda: self.rapor_olustur(
             rapor_combobox.get(),
             baslangic_tarih_entry.get(),
             bitis_tarih_entry.get(),
             rapor_tree,
             toplam_label
-        )).grid(row=2, column=0, columnspan=2, pady=5)
+        )).grid(row=0, column=2, columnspan=2, pady=5)
         
         # Rapor sonuçları
         rapor_sonuc_frame = tk.LabelFrame(rapor_pencere, text="Rapor Sonuçları", padx=5, pady=5)
@@ -1345,7 +1350,7 @@ class CafeAdisyonProgrami:
         toplam_label.pack(side=tk.BOTTOM, fill=tk.X, pady=5)
         
         # Excel'e aktar butonu
-        tk.Button(rapor_sonuc_frame, text="Excel'e Aktar", command=lambda: self.raporu_excele_aktar(rapor_tree)).pack(side=tk.BOTTOM, pady=5)
+        tk.Button(rapor_sonuc_frame, text="Excel'e Aktar", relief=tk.GROOVE, command=lambda: self.raporu_excele_aktar(rapor_tree)).pack(side=tk.RIGHT, pady=5)
     
     def rapor_olustur(self, rapor_turu, baslangic_tarih, bitis_tarih, treeview, toplam_label):
         try:
