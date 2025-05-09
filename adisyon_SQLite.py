@@ -2210,13 +2210,13 @@ class CafeAdisyonProgrami:
                 WHERE masa_no = ?
             ''', (masa_no,))
             ara_odeme_row = self.cursor.fetchone()
-            ara_odemeler_toplam = ara_odeme_row['ara_odeme_toplam'] if ara_odeme_row and ara_odeme_row['ara_odeme_toplam'] is not None else 0.0
+            # Anahtar adı 'ara_odeme_toplam' olarak kullanılmalı
+            ara_odemeler_toplam = ara_odeme_row['ara_odeme_toplam'] if ara_odeme_row and 'ara_odeme_toplam' in ara_odeme_row and ara_odeme_row['ara_odeme_toplam'] is not None else 0.0
 
             # Toplam Borç = Müşterinin Kümülatif Bakiyesi + Masa Oturumu Toplamı
             total_owed = current_cumulative_balance + masa_oturum_toplami
 
             # Kalan Tutar = Toplam Borç - Yapılan Ara Ödemeler (Bu pencere için hesaplanan kalan)
-            # Ödeme yapıldığında bu kalan tutar üzerinden işlem yapılacak.
             kalan_tutar_bu_pencere = total_owed - ara_odemeler_toplam
 
 
@@ -2283,10 +2283,7 @@ class CafeAdisyonProgrami:
                 else:
                     # Müşteri ID var ama müşteri bulunamadı (DB tutarsızlığı)
                     messagebox.showwarning("Uyarı", f"Masa {masa_no} ile ilişkili müşteri bulunamadı!", parent=self.adisyon_frame)
-                    # Müşteri olmadan ara ödeme alımına devam edip etmeyeceğimize karar verilmeli.
-                    # Şimdilik, müşteri yoksa ara ödeme alımını iptal edelim veya sadece masa toplamı üzerinden işlem yapalım.
-                    # Kümülatif bakiye entegrasyonu için müşteri gerekli, iptal etmek daha güvenli.
-                    return
+                    return # Müşteri yoksa ara ödeme alımını iptal et
 
 
             # Masanın ara ödemeler toplamını al (Ayrı sorgu)
@@ -2295,7 +2292,8 @@ class CafeAdisyonProgrami:
                 WHERE masa_no = ?
             ''', (masa_no,))
             ara_odeme_row = self.cursor.fetchone()
-            ara_odemeler_toplam = ara_odeme_row['ara_odeme_toplam'] if ara_odeme_row and ara_odeme_row['ara_odeme_toplam'] is not None else 0.0
+            # Anahtar adı 'ara_odeme_toplam' olarak kullanılmalı
+            ara_odemeler_toplam = ara_odeme_row['ara_odeme_toplam'] if ara_odeme_row and 'ara_odeme_toplam' in ara_odeme_row and ara_odeme_row['ara_odeme_toplam'] is not None else 0.0
 
             # Toplam Borç = Müşterinin Kümülatif Bakiyesi + Masa Oturumu Toplamı
             total_owed = current_cumulative_balance + masa_oturum_toplami
@@ -2307,7 +2305,6 @@ class CafeAdisyonProgrami:
                  messagebox.showwarning("Uyarı", f"Bu masanın zaten ödemesi tamamlanmış veya fazla ödeme yapılmış! Ödenecek: {kalan_tutar_odeme_sonrasi:.0f} ₺", parent=self.adisyon_frame)
                  return
 
-            # Prompt metni formatlama düzeltildi: Ondalıksız ve ₺ işareti
             # Kullanıcıdan alınacak ödeme miktarı soruluyor
             odeme = simpledialog.askfloat(
                 "Ara Ödeme Al",
@@ -2337,7 +2334,7 @@ class CafeAdisyonProgrami:
                     VALUES (?, ?, ?)
                 ''', (masa_no, odeme, self._tarih_saat_al_db_format()))
 
-                # !!! MÜŞTERİ KÜMÜLATİF BAKİYESİNİ GÜNCELLE !!!
+                # MÜŞTERİ KÜMÜLATİF BAKİYESİNİ GÜNCELLE
                 # Ara ödeme müşterinin kümülatif bakiyesinden düşülür.
                 yeni_cumulative_balance = current_cumulative_balance - odeme
 
@@ -2346,7 +2343,6 @@ class CafeAdisyonProgrami:
                     SET cumulative_balance = ?
                     WHERE musteri_id = ?
                 ''', (yeni_cumulative_balance, musteri_id))
-                # print(f"Müşteri ID {musteri_id} ara ödeme sonrası yeni bakiye: {yeni_cumulative_balance:.2f} ₺") # Debug için
 
 
                 # Masanın son işlem zamanını güncelle
@@ -2362,7 +2358,6 @@ class CafeAdisyonProgrami:
                 self._sepeti_yukle() # Adisyon sekmesindeki etiketleri günceller
                 self._masa_butonlarini_guncelle() # Masa butonlarını günceller
 
-                # Mesaj metni formatlama düzeltildi
                 messagebox.showinfo(
                     "Başarılı",
                     f"{odeme:.0f} ₺ ara ödeme alındı.\n"
@@ -2379,13 +2374,13 @@ class CafeAdisyonProgrami:
                  messagebox.showerror("Hata", f"Ara ödeme alınırken beklenmedik hata: {e}", parent=self.adisyon_frame)
                  print(f"Ara ödeme hatası: {e}")
                  import traceback
-                 traceback.print_exc() # Detaylı hata çıktısı
+                 traceback.print_exc()
 
         except Exception as e:
              messagebox.showerror("Hata", f"Ara ödeme işlemi sırasında beklenmedik hata: {e}", parent=self.adisyon_frame)
              print(f"Ara ödeme ana blok hatası: {e}")
              import traceback
-             traceback.print_exc() # Detaylı hata çıktısı
+             traceback.print_exc()
 
 
     def _odeme_yap(self, odeme_turu):
@@ -2452,17 +2447,17 @@ class CafeAdisyonProgrami:
             WHERE masa_no = ?
         ''', (masa_no,))
         ara_odeme_row = self.cursor.fetchone()
-        ara_odemeler_toplam = ara_odeme_row['ara_odeme_toplam'] if ara_odeme_row and ara_odeme_row['ara_odeme_toplam'] is not None else 0.0
+
+        # !!! DÜZELTME: Anahtar adı 'ara_odeme_toplam' olarak değiştirildi !!!
+        # Traceback'in işaret ettiği satır burasıydı.
+        ara_odemeler_toplam = ara_odeme_row['ara_odeme_toplam'] if ara_odeme_row and 'ara_odeme_toplam' in ara_odeme_row and ara_odeme_row['ara_odeme_toplam'] is not None else 0.0
+
 
         # Masa oturumu toplamı + Müşteri kümülatif bakiye = Toplam Borç
-        total_owed = masa_oturum_toplami + current_cumulative_balance
+        total_owed = current_cumulative_balance + masa_oturum_toplami
 
         # Ödenecek Tutar (Bu oturum için alınan ödeme + varsa ara ödemeler düşüldükten sonra kalan)
-        # Bu, kullanıcının bu masa kapatma işleminde ne kadar ödeme yapması gerektiğini gösterir.
-        # Ara ödemeler zaten total_owed'dan düşülmüş gibi düşünülebilir, çünkü ara ödemeler de bakiyeden düşülmelidir.
-        # Ancak ara ödemeler masa bazında tutulduğu için, burada kalan tutarı hesaplarken
-        # Toplam Borç'tan (kümülatif + oturum) ara ödemeleri düşmek daha doğru bir "ödenecek tutar" verir.
-        odenecek_tutar_bu_kapanista = total_owed - ara_odemeler_toplam # Bu, kullanıcının şimdi ödemesi gereken tutar
+        odenecek_tutar_bu_kapanista = total_owed - ara_odemeler_toplam
 
 
         if odenecek_tutar_bu_kapanista < 0:
@@ -2471,7 +2466,6 @@ class CafeAdisyonProgrami:
                  return
 
         # Ödeme onayı al
-        # Onay mesajında Toplam Borç ve Ödenecek Tutar gösterilir
         if not messagebox.askyesno("Ödeme Onayı",
                                    f"Masa {masa_no} ({odeme_turu})\n"
                                    f"Masa Oturumu Toplamı: {masa_oturum_toplami:.0f} ₺\n"
@@ -2491,7 +2485,7 @@ class CafeAdisyonProgrami:
                 INSERT INTO siparis_gecmisi
                 (masa_no, tarih, odeme_turu, toplam, musteri_id)
                 VALUES (?, ?, ?, ?, ?)
-            ''', (masa_no, kapanis_str, odeme_turu, masa_oturum_toplami, musteri_id)) # Oturum toplamı kaydedildi
+            ''', (masa_no, kapanis_str, odeme_turu, masa_oturum_toplami, musteri_id))
 
             siparis_id = self.cursor.lastrowid
 
@@ -2515,32 +2509,24 @@ class CafeAdisyonProgrami:
             acilis_str = self.cursor.fetchone()['acilis'] # Acilis zamanını çek
             acilis_kayit = acilis_str if acilis_str else datetime(2000, 1, 1, 0, 0, 0).strftime(DB_DATE_FORMAT)
 
+            # Tablo adı düzeltildi: 'masa geçmişi' -> 'masa_gecmisi'
             self.cursor.execute('''
                 INSERT INTO masa_gecmisi
                 (masa_no, acilis, kapanis, musteri_id, toplam, odeme_turu, tarih)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
-            ''', (masa_no, acilis_kayit, kapanis_str, musteri_id, masa_oturum_toplami, odeme_turu, kapanis_str)) # Oturum toplamı kaydedildi
+            ''', (masa_no, acilis_kayit, kapanis_str, musteri_id, masa_oturum_toplami, odeme_turu, kapanis_str))
 
 
-            # !!! MÜŞTERİ KÜMÜLATİF BAKİYESİNİ GÜNCELLE !!!
+            # MÜŞTERİ KÜMÜLATİF BAKİYESİNİ GÜNCELLE
             if musteri_id:
-                # Yeni kümülatif bakiye = Mevcut Bakiye + Masa Oturumu Toplamı - Alınan Ödeme (Bu kapanıştaki ödeme + Ara ödemeler)
-                # Alınan Ödeme = Ödenecek Tutar bu kapanışta
-                alinan_odeme_bu_kapanista = max(0.0, odenecek_tutar_bu_kapanista) # Negatif ödeme olamaz
-
-                # Ödeme türüne göre (Nakit/Kart) ne kadar ödendiğini belirle.
-                # Basitlik için, Masa Kapat'a basıldığında Ödenecek Tutar'ın tamamının ödendiğini varsayıyoruz.
-                # Eğer kullanıcı daha az öderse bu mantık değişmeli (o zaman _musteri_odeme_al daha uygun olabilir).
-                # Şimdilik, Masa Kapat = Ödenecek Tutar'ın tamamı ödeniyor.
-
-                yeni_cumulative_balance = current_cumulative_balance + masa_oturum_toplami - alinan_odeme_bu_kapanista # Ara ödemeler zaten total_owed'dan düşülmüştü
+                alinan_odeme_bu_kapanista = max(0.0, odenecek_tutar_bu_kapanista)
+                yeni_cumulative_balance = current_cumulative_balance + masa_oturum_toplami - alinan_odeme_bu_kapanista
 
                 self.cursor.execute('''
                     UPDATE musteriler
                     SET cumulative_balance = ?
                     WHERE musteri_id = ?
                 ''', (yeni_cumulative_balance, musteri_id))
-                # print(f"Müşteri ID {musteri_id} yeni bakiye: {yeni_cumulative_balance:.2f} ₺") # Debug için
 
 
             # Masa siparişlerini ve ara ödemeleri temizle
@@ -2562,6 +2548,7 @@ class CafeAdisyonProgrami:
             fatura = f" ADİSYON DETAY & FİŞ \n"
             fatura += f"Masa: {masa_no}\n"
             # Acilis zamanını masa_gecmisi'nden çekmek daha doğru olabilir
+            # Tablo adı düzeltildi: 'masa geçmişi' -> 'masa_gecmisi'
             self.cursor.execute("SELECT acilis FROM masa_gecmisi WHERE masa_no = ? ORDER BY kapanis DESC LIMIT 1", (masa_no,))
             acilis_gecmis_row = self.cursor.fetchone()
             acilis_str_display = datetime.strptime(acilis_gecmis_row['acilis'], DB_DATE_FORMAT).strftime(RAPOR_TARIH_FORMATI + " %H:%M") if acilis_gecmis_row and acilis_gecmis_row['acilis'] else '-'
