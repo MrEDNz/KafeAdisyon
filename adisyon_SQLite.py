@@ -891,7 +891,7 @@ class CafeAdisyonProgrami:
         ttk.Button(odeme_button_frame, text="Ara Ödeme Al", style="AraOdeme.TButton", command=self._ara_odeme).pack(side=tk.LEFT, padx=(0, PAD_X), fill=tk.X, expand=True)
         ttk.Button(odeme_button_frame, text="Masa Kapat (Kart)", style="Kapat.TButton", command=lambda: self._odeme_yap("Kredi Kartı")).pack(side=tk.LEFT, padx=(0, PAD_X), fill=tk.X, expand=True)
         ttk.Button(odeme_button_frame, text="Masa Kapat (Nakit)", style="Kapat.TButton", command=lambda: self._odeme_yap("Nakit")).pack(side=tk.LEFT, fill=tk.X, expand=True)
-        ttk.Button(odeme_button_frame, text="Masa Kapat (Veresiye)", style="Kapat.TButton", command=lambda: self._odeme_yap("Veresiye")).pack(side=tk.LEFT, padx=(0, PAD_X), fill=tk.X, expand=True)
+        #ttk.Button(odeme_button_frame, text="Masa Kapat (Veresiye)", style="Kapat.TButton", command=lambda: self._odeme_yap("Veresiye")).pack(side=tk.LEFT, padx=(10, PAD_X), fill=tk.X, expand=True)
 
 
         # Toplam Etiketleri (Sağ tarafa)
