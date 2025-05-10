@@ -1,3202 +1,2510 @@
-import tkinter as tk
-from tkinter import ttk, messagebox, simpledialog
+# -*- coding: utf-8 -*-
+"""
+TAM PROFESYONEL CAFE ADİSYON PROGRAMI - v4.1
+Tüm hakları saklıdır © 2023
+"""
+
 import sqlite3
-import os
+import tkinter as tk
+from tkinter import ttk, messagebox, filedialog
 from datetime import datetime, timedelta
-import subprocess # Dosya açmak için
-import sys # Sistem bilgisi için
+import os
+import shutil
+import hashlib
+import sys
+import webbrowser
+from PIL import Image, ImageTk
+import tempfile
+import csv
 
-# Sabitler (Constants)
-DB_DATE_FORMAT = "%Y-%m-%d %H:%M:%S" # Veritabanında kullanılacak ISO tarih formatı
-RAPOR_TARIH_FORMATI = "%d.%m.%Y" # Raporlarda ve UI'da gösterilecek tarih formatı
-PAD_X = 10 # Yatay boşluk
-PAD_Y = 10 # Dikey boşluk
-MASA_BTN_WIDTH = 12 # Masa butonu genişliği
-MASA_BTN_HEIGHT = 5 # Masa butonu yüksekliği
-INACTIVITY_THRESHOLD_MIN = 30 # Masa bekleme süresi (dakika)
+# -------------------- KONFİGÜRASYON --------------------
+class Config:
+    DB_NAME = "cafe_db.db"
+    BACKUP_DIR = "backups"
+    COMPANY_NAME = "DELTA CAFE"
+    ADDRESS = "İstiklal Cad. No:123, İstanbul"
+    PHONE = "0212 123 4567"
+    TAX_NUMBER = "1234567890"
+    LOGO_PATH = "logo.png"
+    DEFAULT_THEME = "clam"
+    RECEIPT_PRINTER = "POS58"
+    COMPANY_NAME = "My Cafe"
+    PHONE = "0212 123 4567"
 
-# Renk Tanımları
-RENK_BOS_MASA = "#a8d5ba" # Açık yeşil
-RENK_DOLU_MASA = "#f7b267" # Turuncu
-RENK_MUSTERILI_MASA = "#a2d2ff" # Açık mavi
-RENK_BEKLEYEN_MASA = "#e56b6f" # Kırmızı
-RENK_BUTON_MASA_YONETIM = "#f7b267" # Turuncu
-RENK_BUTON_ODEME = "#f0c808" # Sarı
-RENK_BUTON_KAPAT = "#d9534f" # Kırmızı
-RENK_BUTON_ARA_ODEME = "#5bc0de" # Mavi
-RENK_BUTON_EKLE_CIKAR = "#90be6d" # Yeşil
-RENK_BUTON_YONETIM = "#f8f9fa" # Beyazımsı
-RENK_BUTON_RAPOR = "#4CAF50" # Yeşil
-RENK_BUTON_EXPORT = "#2196F3" # Mavi
-RENK_BUTON_TEMIZLE = "#f44336" # Kırmızı
-
-# Kategori Renkleri (Örnek - Kendi kategorilerinize göre ayarlayın)
-KATEGORI_RENKLERI = {
-    "Sıcak İçecekler": "#ffadad",
-    "Soğuk İçecekler": "#9de0fe",
-    "Kahveler": "#fcf6bd",
-    "Pastalar": "#d8a4f7",
-    "Yiyecekler": "#a0c4ff",
-    "Diğer": "#bdb2ff",
-    "Tümü": "#cccccc" # 'Tümü' kategorisi için varsayılan renk
-}
-
-# Metin rengini arkaplan rengine göre otomatik belirleme
-def get_text_color(bg_color):
-    """Arkaplan rengine göre okunabilir siyah veya beyaz metin rengi döndürür."""
-    # Basit bir parlaklık hesaplaması (RGB değerlerinin ortalaması)
-    # Tkinter renk isimlerini RGB'ye çevirmek daha karmaşık olabilir,
-    # şimdilik sadece hex renk kodları için çalışır.
-    try:
-        bg_color = bg_color.lstrip('#')
-        r, g, b = int(bg_color[0:2], 16), int(bg_color[2:4], 16), int(bg_color[4:6], 16)
-        luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
-        return "black" if luminance > 0.5 else "white"
-    except:
-        return "black" # Hata durumunda varsayılan siyah
-
-
-# Varsayılan ürün listesi (Uygulama ilk çalıştığında ve ürünler tablosu boşsa kullanılır)
-default_products = [
-    {'sira': 1, 'urun_adi': 'Türk Kahvesi', 'fiyat': 30.0, 'kategori': 'Kahveler'},
-    {'sira': 2, 'urun_adi': 'Çay', 'fiyat': 20.0, 'kategori': 'Sıcak İçecekler'},
-    {'sira': 3, 'urun_adi': 'Espresso', 'fiyat': 40.0, 'kategori': 'Kahveler'},
-    {'sira': 4, 'urun_adi': 'Latte', 'fiyat': 45.0, 'kategori': 'Kahveler'},
-    {'sira': 5, 'urun_adi': 'Mocha', 'fiyat': 50.0, 'kategori': 'Kahveler'},
-    {'sira': 6, 'urun_adi': 'Limonata', 'fiyat': 30.0, 'kategori': 'Soğuk İçecekler'},
-    {'sira': 7, 'urun_adi': 'Portakal Suyu', 'fiyat': 35.0, 'kategori': 'Soğuk İçecekler'},
-    {'sira': 8, 'urun_adi': 'Ayran', 'fiyat': 25.0, 'kategori': 'Soğuk İçecekler'},
-    {'sira': 9, 'urun_adi': 'Su', 'fiyat': 15.0, 'kategori': 'Soğuk İçecekler'},
-    {'sira': 10, 'urun_adi': 'Cheesecake', 'fiyat': 60.0, 'kategori': 'Pastalar'},
-    {'sira': 11, 'urun_adi': 'Tiramisu', 'fiyat': 55.0, 'kategori': 'Pastalar'},
-    {'sira': 12, 'urun_adi': 'Sandviç', 'fiyat': 70.0, 'kategori': 'Yiyecekler'},
-    {'sira': 13, 'urun_adi': 'Salata', 'fiyat': 65.0, 'kategori': 'Yiyecekler'},
-    # ... (Diğer ürünleriniz buraya gelecek) ...
-]
-
-# Varsayılan masa listesi (Uygulama ilk çalıştığında ve masalar tablosu boşsa kullanılır)
-default_masalar = [
-    {'masa_no': 1},
-    {'masa_no': 2},
-    {'masa_no': 3},
-    {'masa_no': 4},
-    {'masa_no': 5},
-    {'masa_no': 6},
-    {'masa_no': 7},
-    {'masa_no': 8},
-    {'masa_no': 9},
-    {'masa_no': 10},
-]
-
-
-class CafeAdisyonProgrami:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("Cafe Adisyon Sistemi")
-        self.root.geometry("1000x700")
-
-        self.style = ttk.Style()
-        self._configure_styles()
-
-        # Veritabanı bağlantısı
-        self.db_file = 'cafe.db' # Veritabanı dosya adını sakla
+# -------------------- VERİTABANI KATMANI --------------------
+class Database:
+    def __init__(self, db_file):
+        self.db_file = db_file
         self.conn = None
-        self.cursor = None
-        self._veritabani_baglantisi_kur() # Bağlantıyı kur
-
-        self._veritabani_tablolarini_olustur() # Tabloları oluştur
-
-        # musteriler tablosuna cumulative_balance sütununu ekle (Savunma amaçlı tekrar kontrol)
-        try:
-            self.cursor.execute("SELECT cumulative_balance FROM musteriler LIMIT 1")
-            # print("musteriler tablosunda cumulative_balance sütunu mevcut.") # Çok sık mesaj vermesin
-        except sqlite3.OperationalError:
-            print("musteriler tablosunda cumulative_balance sütunu eksik, ekleniyor...")
-            try:
-                self.cursor.execute("ALTER TABLE musteriler ADD COLUMN cumulative_balance REAL DEFAULT 0.0")
-                self.conn.commit()
-                print("cumulative_balance sütunu başarıyla eklendi.")
-            except sqlite3.Error as e:
-                print(f"Hata: musteriler tablosuna cumulative_balance sütunu eklenirken veritabanı hatası: {e}")
-                self.conn.rollback()
-        except Exception as e:
-             print(f"cumulative_balance sütunu kontrol edilirken beklenmedik hata: {e}")
-
-
-        # Yedek alırken db_file kullanılır, bu yüzden db_file tanımından sonra çağrılmalı
-        self._yedek_al()
-
-        # Başlangıç değişkenleri
-        self.aktif_masa = None
-        self.current_mode = "normal" # Uygulama modunu takip et (normal, assign_customer vb.)
-        self.secili_musteri_id = None # Müşteri işlemleri sekmesinde seçili müşteri ID'si
-        self.toplam_tutar = 0.0 # Adisyon sekmesinde anlık masa toplamı
-        self.iskonto = 0.0 # Adisyon sekmesinde anlık iskonto
-        self.sepet_urun_ids = {} # Sepetteki ürünlerin Treeview item ID'lerini saklamak için (miktar güncelleme/silme için)
-
-
-        # Ana arayüz (Notebook) oluştur
-        self.notebook = ttk.Notebook(self.root)
-        self.notebook.pack(pady=PAD_Y, padx=PAD_X, fill=tk.BOTH, expand=True)
-
-        # Sekmeleri oluştur
-        self.masa_frame = ttk.Frame(self.notebook, padding="10")
-        self.adisyon_frame = ttk.Frame(self.notebook, padding="10")
-        self.musteri_frame = ttk.Frame(self.notebook, padding="10")
-        self.urun_frame = ttk.Frame(self.notebook, padding="10")
-        self.muhasebe_frame = ttk.Frame(self.notebook, padding="10")
-
-        self.notebook.add(self.masa_frame, text="Masa Yönetimi")
-        self.notebook.add(self.adisyon_frame, text="Adisyon")
-        self.notebook.add(self.musteri_frame, text="Müşteri İşlemleri")
-        self.notebook.add(self.urun_frame, text="Ürün Yönetimi")
-        self.notebook.add(self.muhasebe_frame, text="Muhasebe")
-
-        # Arayüzleri oluştur
-        self.masa_arayuz_olustur()
-        self.adisyon_arayuz_olustur()
-        self.musteri_arayuz_olustur() # Alt çizgisiz olanı çağır
-        self.urun_arayuz_olustur()
-        self.muhasebe_arayuz_olustur()
-
-
-        # Sekme değişim olayını bağla
-        self.notebook.bind("<<NotebookTabChanged>>", self._sekme_degisti)
-
-        # Program başladığında Masa Yönetimi sekmesini seç
-        self.notebook.select(0)
-
-        # Saat etiketini güncelle
-        self._saat_guncelle()
-
-        # Program kapanırken veritabanını kapat
-        self.root.protocol("WM_DELETE_WINDOW", self._on_closing)
-
-        # print(f"Veritabanı yedeği alındı: {self.last_backup_path}") # Artık _yedek_al içinde yazdırılıyor
-
-
-    def _configure_styles(self):
-        """ttk stillerini yapılandırır."""
-        try:
-            self.style.theme_use('clam') # Modern bir tema kullan
-            self.style.configure("TButton", padding=6, relief="flat", font=('Arial', 10))
-            self.style.configure("TLabel", font=('Arial', 10))
-            self.style.configure("TEntry", padding=5)
-            self.style.configure("TCombobox", padding=5)
-            self.style.configure("Treeview.Heading", font=('Arial', 10, 'bold'))
-            self.style.configure("Treeview", font=('Arial', 10), rowheight=25)
-
-
-            # Özel Buton Stilleri
-            self.style.configure("Masa.TButton", font=('Arial', 10, 'bold'), padding=10)
-            self.style.map("Masa.TButton",
-                           background=[('active', RENK_MUSTERILI_MASA), ('!disabled', RENK_BOS_MASA)],
-                           foreground=[('active', 'black'), ('!disabled', 'black')])
-
-
-            self.style.configure("DoluMasa.TButton", font=('Arial', 10, 'bold'), padding=10, background=RENK_DOLU_MASA)
-            self.style.map("DoluMasa.TButton",
-                           background=[('active', RENK_BEKLEYEN_MASA), ('!disabled', RENK_DOLU_MASA)],
-                           foreground=[('active', 'white'), ('!disabled', 'black')])
-
-
-            self.style.configure("MusteriliMasa.TButton", font=('Arial', 10, 'bold'), padding=10, background=RENK_MUSTERILI_MASA)
-            self.style.map("MusteriliMasa.TButton",
-                           background=[('active', RENK_BEKLEYEN_MASA), ('!disabled', RENK_MUSTERILI_MASA)],
-                           foreground=[('active', 'white'), ('!disabled', 'black')])
-
-            self.style.configure("BekleyenMasa.TButton", font=('Arial', 10, 'bold'), padding=10, background=RENK_BEKLEYEN_MASA)
-            self.style.map("BekleyenMasa.TButton",
-                           background=[('active', RENK_DOLU_MASA), ('!disabled', RENK_BEKLEYEN_MASA)],
-                           foreground=[('active', 'black'), ('!disabled', 'white')])
-
-            self.style.configure("AktifMasa.TButton", font=('Arial', 10, 'bold'), padding=10, background="blue", foreground="white") # Seçili masa için mavi
-
-            self.style.configure("Baslik.TLabel", font=('Arial', 12, 'bold'))
-            self.style.configure("Bilgi.TLabel", font=('Arial', 10))
-            self.style.configure("Toplam.TLabel", font=('Arial', 14, 'bold'))
-            self.style.configure("HizliSatis.TFrame", background="#f0f0f0") # Canvas arka plan rengiyle uyumlu
-
-            # Adisyon Sekmesi Buton Stilleri
-            self.style.configure("EkleCikar.TButton", background=RENK_BUTON_EKLE_CIKAR, foreground=get_text_color(RENK_BUTON_EKLE_CIKAR))
-            self.style.configure("Odeme.TButton", background=RENK_BUTON_ODEME, foreground=get_text_color(RENK_BUTON_ODEME))
-            self.style.configure("Kapat.TButton", background=RENK_BUTON_KAPAT, foreground=get_text_color(RENK_BUTON_KAPAT))
-            self.style.configure("AraOdeme.TButton", background=RENK_BUTON_ARA_ODEME, foreground=get_text_color(RENK_BUTON_ARA_ODEME))
-
-            # Yönetim Sekmesi Buton Stilleri
-            self.style.configure("Yonetim.TButton", background=RENK_BUTON_YONETIM, foreground="black")
-            self.style.configure("Temizle.TButton", background=RENK_BUTON_TEMIZLE, foreground=get_text_color(RENK_BUTON_TEMIZle))
-
-            # Rapor Sekmesi Buton Stilleri
-            self.style.configure("Rapor.TButton", background=RENK_BUTON_RAPOR, foreground=get_text_color(RENK_BUTON_RAPOR))
-            self.style.configure("Export.TButton", background=RENK_BUTON_EXPORT, foreground=get_text_color(RENK_BUTON_EXPORT))
-
-
-        except tk.TclError as e:
-            print(f"Stil yapılandırma hatası: {e}")
-            messagebox.showwarning("Stil Hatası", "Stiller yapılandırılırken bir sorun oluştu. Uygulama varsayılan görünüme dönebilir.")
-        except Exception as e:
-            print(f"Beklenmedik stil hatası: {e}")
-
-
-    def _veritabani_baglantisi_kur(self):
-        """Veritabanı bağlantısını kurar."""
+        self.connect()
+        self.create_tables()
+        self.insert_default_data()
+    
+    def connect(self):
         try:
             self.conn = sqlite3.connect(self.db_file)
-            self.conn.row_factory = sqlite3.Row # Sütun isimleriyle erişim için
-            self.cursor = self.conn.cursor()
-            print("Veritabanı bağlantısı başarıyla kuruldu.")
+            self.conn.execute("PRAGMA foreign_keys = ON")
+            return True
         except sqlite3.Error as e:
-            messagebox.showerror("Veritabanı Hatası", f"Veritabanı bağlantısı kurulurken hata oluştu: {e}")
-            self.root.destroy() # Hata durumunda uygulamayı kapat
-        except Exception as e:
-            messagebox.showerror("Hata", f"Beklenmedik hata oluştu: {e}")
-            self.root.destroy() # Hata durumunda uygulamayı kapat
-
-
-    def _veritabani_tablolarini_olustur(self):
-        """Gerekli veritabanı tablolarını oluşturur."""
+            self.show_error("Veritabanı bağlantı hatası", str(e))
+            return False
+    
+    def create_tables(self):
+        tables = [
+            """CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT UNIQUE NOT NULL,
+                password TEXT NOT NULL,
+                full_name TEXT NOT NULL,
+                role TEXT NOT NULL,
+                is_active INTEGER DEFAULT 1
+            )""",
+            """CREATE TABLE IF NOT EXISTS categories (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT UNIQUE NOT NULL,
+                description TEXT,
+                image_path TEXT,
+                sort_order INTEGER DEFAULT 0,
+                is_active INTEGER DEFAULT 1
+            )""",
+            """CREATE TABLE IF NOT EXISTS products (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                category_id INTEGER NOT NULL,
+                price REAL NOT NULL,
+                cost REAL,
+                stock REAL DEFAULT 0,
+                unit TEXT DEFAULT 'adet',
+                barcode TEXT,
+                description TEXT,
+                image_path TEXT,
+                is_active INTEGER DEFAULT 1,
+                FOREIGN KEY(category_id) REFERENCES categories(id)
+            )""",
+            """CREATE TABLE IF NOT EXISTS tables (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT UNIQUE NOT NULL,
+                is_active INTEGER DEFAULT 1
+            )""",
+            """CREATE TABLE IF NOT EXISTS orders (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                table_id INTEGER NOT NULL,
+                user_id INTEGER NOT NULL,
+                total REAL NOT NULL,
+                discount REAL DEFAULT 0,
+                date TEXT NOT NULL,
+                status TEXT DEFAULT 'open',
+                payment_type TEXT,
+                notes TEXT,
+                FOREIGN KEY(table_id) REFERENCES tables(id),
+                FOREIGN KEY(user_id) REFERENCES users(id)
+            )""",
+            """CREATE TABLE IF NOT EXISTS order_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                order_id INTEGER NOT NULL,
+                product_id INTEGER NOT NULL,
+                quantity REAL NOT NULL,
+                price REAL NOT NULL,
+                discount REAL DEFAULT 0,
+                notes TEXT,
+                FOREIGN KEY(order_id) REFERENCES orders(id),
+                FOREIGN KEY(product_id) REFERENCES products(id)
+            )""",
+            """CREATE TABLE IF NOT EXISTS payments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                order_id INTEGER NOT NULL,
+                amount REAL NOT NULL,
+                date TEXT NOT NULL,
+                payment_type TEXT NOT NULL,
+                notes TEXT,
+                FOREIGN KEY(order_id) REFERENCES orders(id)
+            )""",
+            """CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            )"""
+        ]
+        
         try:
-            # Masalar tablosu
-            self.cursor.execute('''
-                CREATE TABLE IF NOT EXISTS masalar (
-                    masa_no INTEGER PRIMARY KEY,
-                    durum TEXT DEFAULT 'boş', -- 'boş', 'dolu'
-                    toplam REAL DEFAULT 0.0,
-                    musteri_id INTEGER,
-                    acilis TEXT, -- Masa açılış zamanı
-                    kapanis TEXT, -- Masa kapanış zamanı
-                    son_adisyon_zamani TEXT, -- Son ürün ekleme/çıkarma zamanı
-                    son_islem_zamani TEXT, -- Son herhangi bir işlem zamanı (adisyon, ödeme, müşteri atama vb.)
-                    FOREIGN KEY (musteri_id) REFERENCES musteriler (musteri_id)
-                )
-            ''')
-
-            # Ürünler tablosu
-            self.cursor.execute('''
-                CREATE TABLE IF NOT EXISTS urunler (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT, -- Otomatik artan ID
-                    sira INTEGER UNIQUE, -- Sıra numarası (null olabilir)
-                    urun_adi TEXT UNIQUE NOT NULL,
-                    fiyat REAL NOT NULL,
-                    kategori TEXT,
-                    aktif INTEGER DEFAULT 1 -- 1: Aktif, 0: Pasif
-                )
-            ''')
-
-            # Masa Siparişleri tablosu (Aktif masaların siparişleri)
-            self.cursor.execute('''
-                CREATE TABLE IF NOT EXISTS masa_siparisleri (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    masa_no INTEGER,
-                    urun_adi TEXT,
-                    fiyat REAL,
-                    miktar INTEGER,
-                    tutar REAL, -- fiyat * miktar
-                    eklenme_zamani TEXT,
-                    FOREIGN KEY (masa_no) REFERENCES masalar (masa_no),
-                    FOREIGN KEY (urun_adi) REFERENCES urunler (urun_adi),
-                    UNIQUE(masa_no, urun_adi) -- Bir masada aynı üründen sadece bir satır olsun (miktarı güncellenir)
-                )
-            ''')
-
-            # Sipariş Geçmişi tablosu (Kapatılan masaların özet bilgileri)
-            self.cursor.execute('''
-                CREATE TABLE IF NOT EXISTS siparis_gecmisi (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    masa_no INTEGER,
-                    tarih TEXT, -- Kapanış tarihi
-                    odeme_turu TEXT, -- 'Nakit', 'Kart', 'Veresiye'
-                    toplam REAL, -- Masa oturumunun toplam tutarı
-                    musteri_id INTEGER,
-                    FOREIGN KEY (masa_no) REFERENCES masalar (masa_no),
-                    FOREIGN KEY (musteri_id) REFERENCES musteriler (musteri_id)
-                )
-            ''')
-
-            # Sipariş Detayları tablosu (Sipariş geçmişindeki her bir kalemin detayı)
-            self.cursor.execute('''
-                CREATE TABLE IF NOT EXISTS siparis_detaylari (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    siparis_id INTEGER,
-                    urun_adi TEXT,
-                    fiyat REAL,
-                    miktar INTEGER,
-                    tutar REAL,
-                    FOREIGN KEY (siparis_id) REFERENCES siparis_gecmisi (id),
-                    FOREIGN KEY (urun_adi) REFERENCES urunler (urun_adi)
-                )
-            ''')
-
-            # Müşteriler tablosu
-            self.cursor.execute('''
-                CREATE TABLE IF NOT EXISTS musteriler (
-                    musteri_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    ad TEXT NOT NULL,
-                    soyad TEXT,
-                    telefon TEXT UNIQUE,
-                    adres TEXT,
-                    kayit_tarihi TEXT, -- Müşteri kayıt tarihi eklendi
-                    cumulative_balance REAL DEFAULT 0.0 -- Kümülatif bakiye (veresiye için)
-                )
-            ''')
-
-            # Ara Ödemeler tablosu (Masaya yapılan ara ödemeler)
-            self.cursor.execute('''
-                CREATE TABLE IF NOT EXISTS ara_odemeler (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    masa_no INTEGER,
-                    miktar REAL,
-                    tarih TEXT,
-                    FOREIGN KEY (masa_no) REFERENCES masalar (masa_no)
-                )
-            ''')
-
-            # Masa Geçmişi tablosu (Her masa açılış ve kapanış kaydı)
-            self.cursor.execute('''
-                CREATE TABLE IF NOT EXISTS masa_gecmisi (
-                    kayit_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    masa_no INTEGER,
-                    acilis TEXT,
-                    kapanis TEXT,
-                    musteri_id INTEGER,
-                    toplam REAL, -- O oturumun toplam tutarı
-                    odeme_turu TEXT, -- O oturumun ödeme türü
-                    tarih TEXT, -- Kayit tarihi (genellikle kapanış tarihi)
-                    FOREIGN KEY (masa_no) REFERENCES masalar (masa_no),
-                    FOREIGN KEY (musteri_id) REFERENCES musteriler (musteri_id)
-                )
-            ''')
-
-
+            cursor = self.conn.cursor()
+            for table in tables:
+                cursor.execute(table)
             self.conn.commit()
-            print("Veritabanı tabloları başarıyla oluşturuldu veya zaten mevcut.")
-
-            # Ürünler tablosu boşsa varsayılan ürünleri ekle
-            self.cursor.execute("SELECT COUNT(*) FROM urunler")
-            if self.cursor.fetchone()[0] == 0:
-                 print("Ürünler tablosu boş, varsayılan ürünler ekleniyor...")
-                 self._varsayilan_urunleri_ekle()
-
-            # Masalar tablosu boşsa varsayılan masaları ekle
-            self.cursor.execute("SELECT COUNT(*) FROM masalar")
-            if self.cursor.fetchone()[0] == 0:
-                 print("Masalar tablosu boş, varsayılan masalar ekleniyor...")
-                 self._varsayilan_masalari_ekle()
-
-
         except sqlite3.Error as e:
-            print(f"Veritabanı tablosu oluşturma hatası: {e}")
-            messagebox.showerror("Veritabanı Hatası", f"Veritabanı tabloları oluşturulurken hata oluştu: {e}")
-        except Exception as e:
-            print(f"Beklenmedik hata oluştu: {e}")
-            messagebox.showerror("Hata", f"Beklenmedik hata oluştu: {e}")
-
-    def _varsayilan_urunleri_ekle(self):
-        """Ürünler tablosu boşsa varsayılan ürünleri ekler."""
-        try:
-            self.cursor.execute("SELECT COUNT(*) FROM urunler")
-            if self.cursor.fetchone()[0] == 0:
-                urun_listesi = [
-                    (1, 'Türk Kahvesi', 30.0, 'Kahveler', 1),
-                    (2, 'Çay', 20.0, 'Sıcak İçecekler', 1),
-                    (3, 'Espresso', 40.0, 'Kahveler', 1),
-                    (4, 'Latte', 45.0, 'Kahveler', 1),
-                    (5, 'Mocha', 50.0, 'Kahveler', 1),
-                    (6, 'Limonata', 30.0, 'Soğuk İçecekler', 1),
-                    (7, 'Portakal Suyu', 35.0, 'Soğuk İçecekler', 1),
-                    (8, 'Ayran', 25.0, 'Soğuk İçecekler', 1),
-                    (9, 'Su', 15.0, 'Soğuk İçecekler', 1),
-                    (10, 'Cheesecake', 60.0, 'Pastalar', 1),
-                    (11, 'Tiramisu', 55.0, 'Pastalar', 1),
-                    (12, 'Sandviç', 70.0, 'Yiyecekler', 1),
-                    (13, 'Salata', 65.0, 'Yiyecekler', 1),
-                    # ... (Diğer varsayılan ürünler) ...
-                ]
-                self.cursor.executemany('''
-                    INSERT INTO urunler (sira, urun_adi, fiyat, kategori, aktif)
-                    VALUES (?, ?, ?, ?, ?)
-                ''', urun_listesi)
-                self.conn.commit()
-                print(f"{len(urun_listesi)} adet varsayılan ürün eklendi.")
-        except sqlite3.Error as e:
-            print(f"Varsayılan ürünleri ekleme hatası: {e}")
-            self.conn.rollback()
-        except Exception as e:
-            print(f"Varsayılan ürünleri ekleme beklenmedik hata: {e}")
-
-    def _varsayilan_masalari_ekle(self):
-        """Masalar tablosu boşsa varsayılan masaları ekler."""
-        try:
-            self.cursor.execute("SELECT COUNT(*) FROM masalar")
-            if self.cursor.fetchone()[0] == 0:
-                masa_listesi = [(masa['masa_no'],) for masa in default_masalar]
-                self.cursor.executemany('''
-                    INSERT INTO masalar (masa_no)
-                    VALUES (?)
-                ''', masa_listesi)
-                self.conn.commit()
-                print(f"{len(masa_listesi)} adet varsayılan masa eklendi.")
-        except sqlite3.Error as e:
-            print(f"Varsayılan masaları ekleme hatası: {e}")
-            self.conn.rollback()
-        except Exception as e:
-            print(f"Varsayılan masaları ekleme beklenmedik hata: {e}")
-
-
-    def _yedek_al(self):
-        """Veritabanının yedeğini alır."""
-        yedek_klasoru = "yedekler"
-        if not os.path.exists(yedek_klasoru):
-            os.makedirs(yedek_klasoru)
-
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        yedek_dosya_adi = f"cafe_yedek_{timestamp}.db"
-        yedek_yolu = os.path.join(yedek_klasoru, yedek_dosya_adi)
-
-        try:
-            # Mevcut veritabanını kapat
-            if self.conn:
-                 self.conn.close()
-                 self.conn = None
-                 self.cursor = None
-
-            # Orijinal dosyayı kopyala
-            import shutil
-            shutil.copy2(self.db_file, yedek_yolu)
-
-            # Bağlantıyı tekrar kur
-            self._veritabani_baglantisi_kur()
-
-            self.last_backup_path = yedek_yolu # Son yedek yolunu sakla
-            print(f"Veritabanı yedeği alındı: {yedek_yolu}")
-            # messagebox.showinfo("Yedekleme", f"Veritabanı yedeği başarıyla alındı:\n{yedek_yolu}") # Çok sık mesaj vermesin
-
-        except FileNotFoundError:
-            print(f"Hata: Yedeklenecek veritabanı dosyası bulunamadı: {self.db_file}")
-            messagebox.showerror("Yedekleme Hatası", "Veritabanı dosyası bulunamadı. Yedekleme yapılamadı.")
-            # Uygulama çalışmaya devam edebilir ama yedekleme olmaz
-            if self.conn is None: # Bağlantı kapandıysa ve tekrar kurulamadıysa
-                 self._veritabani_baglantisi_kur() # Tekrar kurmayı dene
-        except Exception as e:
-            print(f"Yedekleme hatası: {e}")
-            messagebox.showerror("Yedekleme Hatası", f"Veritabanı yedeği alınırken bir hata oluştu:\n{e}")
-            if self.conn is None: # Bağlantı kapandıysa ve tekrar kurulamadıysa
-                 self._veritabani_baglantisi_kur() # Tekrar kurmayı dene
-
-
-    def _uygulamayi_kapat(self):
-        """Uygulama kapatılırken veritabanı bağlantısını kapatır ve yedek alır."""
-        if messagebox.askokcancel("Çıkış", "Uygulamayı kapatmak istediğinize emin misiniz?"):
-            try:
-                self._yedek_al() # Kapatırken son bir yedek al
-                if self.conn:
-                    self.conn.close()
-                    print("Veritabanı bağlantısı kapatıldı.")
-            except Exception as e:
-                print(f"Uygulama kapatılırken hata oluştu: {e}")
-            self.root.destroy()
-
-    def _on_closing(self):
-        """Pencere kapatma butonuna basıldığında çalışır."""
-        self._uygulamayi_kapat() # _uygulamayi_kapat fonksiyonunu çağır
-
-
-    def _tarih_saat_al_db_format(self):
-        """Şu anki tarih ve saati veritabanı formatında döndürür."""
-        return datetime.now().strftime(DB_DATE_FORMAT)
-
-    def _tarih_saat_al_display_format(self):
-        """Şu anki tarih ve saati gösterim formatında döndürür."""
-        return datetime.now().strftime(RAPOR_TARIH_FORMATI + " %H:%M:%S")
-
-    def _saat_guncelle(self):
-        """Saati günceller ve her saniye tekrar çalışmak için planlar."""
-        if hasattr(self, 'saat_label'):
-            self.saat_label.config(text=self._tarih_saat_al_display_format())
-            self.root.after(1000, self._saat_guncelle) # 1000 ms (1 saniye) sonra tekrar çağır
-
-
-    def _sekme_degisti(self, event):
-        """Notebook sekmesi değiştiğinde çalışır."""
-        secili_sekme_index = self.notebook.index(self.notebook.select())
-        # print(f"Sekme değişti: {secili_sekme_index}")
-
-        # Masa Yönetimi sekmesine dönüldüğünde masa butonlarını güncelle
-        if secili_sekme_index == 0: # Masa Yönetimi sekmesi
-            self._masa_butonlarini_olustur()
-            self.aktif_masa = None # Sekme değişince aktif masayı sıfırla
-            if hasattr(self, 'aktif_masa_label'):
-                 self.aktif_masa_label.config(text="Aktif Masa: Seçili değil")
-            if hasattr(self, 'musteri_label'):
-                 self.musteri_label.config(text="Müşteri: -")
-            if hasattr(self, 'musteri_bakiye_adisyon_label'):
-                 self.musteri_bakiye_adisyon_label.config(text="Bakiye: 0 ₺")
-            self._sepeti_temizle_ui_only() # Sepet UI'ı temizle
-
-        # Ürün Yönetimi sekmesine geçildiğinde ürün listesini güncelle
-        elif secili_sekme_index == 3: # Ürün Yönetimi sekmesi
-             self._urunleri_yukle()
-             self._urun_formunu_temizle() # Formu temizle
-
-        # Müşteri İşlemleri sekmesine geçildiğinde müşteri listesini güncelle
-        elif secili_sekme_index == 2: # Müşteri İşlemleri sekmesi
-             self._musteri_listesini_guncelle()
-             self._musteri_formu_temizle() # Formu temizle
-
-        # Muhasebe sekmesine geçildiğinde rapor alanını temizle
-        elif secili_sekme_index == 4: # Muhasebe sekmesi
-             if hasattr(self, 'muhasebe_rapor_text'):
-                 self.muhasebe_rapor_text.config(state='normal')
-                 self.muhasebe_rapor_text.delete(1.0, tk.END)
-                 self.muhasebe_rapor_text.config(state='disabled')
-
-
-    # --- Masa Yönetimi Sekmesi Fonksiyonları ---
-
-    def masa_arayuz_olustur(self):
-        """Masa Yönetimi sekmesi arayüzünü oluşturur."""
-        # Masa butonları için bir frame oluştur
-        self.masa_buton_frame = ttk.Frame(self.masa_frame)
-        self.masa_buton_frame.pack(pady=PAD_Y, padx=PAD_X, fill=tk.BOTH, expand=True)
-
-        # Masa butonlarını oluştur ve yerleştir
-        self._masa_butonlarini_olustur()
-
-    def _masa_butonlarini_olustur(self):
-        """Masa butonlarını veritabanındaki masalara göre dinamik olarak oluşturur."""
-        # Mevcut butonları temizle
-        for widget in self.masa_buton_frame.winfo_children():
-            widget.destroy()
-
-        try:
-            self.cursor.execute("SELECT masa_no, durum, toplam, musteri_id, son_islem_zamani FROM masalar ORDER BY masa_no")
-            masalar = self.cursor.fetchall()
-
-            # Grid ayarları
-            COLS = 5 # Her satırda kaç masa butonu olacağı (ayarlanabilir)
-            PAD = 5 # Butonlar arası boşluk
-
-            # Grid için satır ve sütun ağırlıklarını ayarla
-            total_rows = (len(masalar) + COLS - 1) // COLS if len(masalar) > 0 else 1
-            for r in range(total_rows):
-                 self.masa_buton_frame.grid_rowconfigure(r, weight=1)
-
-            for c in range(COLS):
-                 self.masa_buton_frame.grid_columnconfigure(c, weight=1)
-
-
-            for i, masa in enumerate(masalar):
-                masa_no = masa['masa_no']
-                durum = masa['durum']
-                toplam = masa['toplam'] if masa['toplam'] is not None else 0.0
-                musteri_id = masa['musteri_id']
-                son_islem_zamani_str = masa['son_islem_zamani']
-
-                # Müşteri adı ve bakiye bilgisini çek
-                musteri_adi = "Misafir"
-                musteri_bakiye = 0.0
-                if musteri_id:
-                    try:
-                        self.cursor.execute("SELECT ad, cumulative_balance FROM musteriler WHERE musteri_id = ?", (musteri_id,))
-                        musteri = self.cursor.fetchone()
-                        if musteri:
-                            musteri_adi = musteri['ad']
-                            musteri_bakiye = musteri['cumulative_balance'] if musteri['cumulative_balance'] is not None else 0.0
-                    except sqlite3.Error as e:
-                        print(f"Masa butonu müşteri bilgisi çekme hatası (Masa {masa_no}): {e}")
-                        musteri_adi = "Hata!"
-                        musteri_bakiye = "Hata!"
-                    except Exception as e:
-                         print(f"Masa butonu müşteri bilgisi çekme beklenmedik hata (Masa {masa_no}): {e}")
-                         musteri_adi = "Hata!"
-                         musteri_bakiye = "Hata!"
-
-
-                # Bekleme süresini kontrol et ve durumu güncelle (sadece dolu masalar için)
-                current_style = "Masa.TButton" # Varsayılan boş masa stili
-                if durum == 'dolu':
-                    current_style = "DoluMasa.TButton" # Varsayılan dolu masa stili
-                    if son_islem_zamani_str:
-                        try:
-                            son_islem_zamani = datetime.strptime(son_islem_zamani_str, DB_DATE_FORMAT)
-                            gecen_sure = datetime.now() - son_islem_zamani
-                            if gecen_sure > timedelta(minutes=INACTIVITY_THRESHOLD_MIN):
-                                current_style = "BekleyenMasa.TButton" # Bekleyen masa stili
-                        except ValueError:
-                            print(f"Hata: Masa {masa_no} için geçersiz son_islem_zamani formatı: {son_islem_zamani_str}")
-                        except Exception as e:
-                             print(f"Masa bekleme süresi hesaplama hatası (Masa {masa_no}): {e}")
-
-
-                # Aktif masa ise stilini değiştir
-                if self.aktif_masa == masa_no:
-                     current_style = "AktifMasa.TButton"
-
-
-                button_text = f"Masa {masa_no}\n"
-                if durum == 'dolu':
-                    button_text += f"{toplam:.0f} ₺\n"
-                    if musteri_id:
-                        button_text += f"({musteri_adi})\n"
-                        if isinstance(musteri_bakiye, (int, float)):
-                             button_text += f"Bakiye: {musteri_bakiye:.0f} ₺" # Masa butonunda da bakiye göster
-                        else:
-                             button_text += f"Bakiye: {musteri_bakiye}" # Hata durumunda hata metnini göster
-                    else:
-                        button_text += "(Misafir)"
-
-
-                btn = ttk.Button(self.masa_buton_frame, text=button_text,
-                                 command=lambda mn=masa_no: self._masa_sec(mn),
-                                 style=current_style) # Stili uygula
-                # Grid'e yerleştirme
-                row, col = divmod(i, COLS)
-                btn.grid(row=row, column=col, padx=PAD, pady=PAD, sticky="nsew")
-
-
-        except sqlite3.Error as e:
-            print(f"Masa butonları oluşturma hatası: {e}")
-            messagebox.showerror("Veritabanı Hatası", f"Masa butonları oluşturulurken hata oluştu: {e}")
-        except Exception as e:
-            print(f"Beklenmedik hata oluştu (_masa_butonlarini_olustur): {e}")
-
-
-    def _masa_sec(self, masa_no):
-        """Bir masa seçildiğinde adisyon detaylarını yükler ve UI'ı günceller."""
-        # Eğer müşteri atama modundaysak, masa seçimi farklı bir işlem yapar
-        if self.current_mode == "assign_customer_selection":
-            self._assign_customer_to_clicked_masa(masa_no)
-            return # Müşteri atama işlemi yapıldıktan sonra normal masa seçimi yapma
-
-
-        # Normal masa seçimi
-        self.aktif_masa = masa_no
-        if hasattr(self, 'aktif_masa_label'):
-             self.aktif_masa_label.config(text=f"Aktif Masa: Masa {masa_no}")
-
-        # Adisyon sekmesine geç
-        self.notebook.select(self.adisyon_frame)
-
-        # Sepeti ve UI'ı seçilen masanın verileriyle yükle
-        self._sepeti_yukle()
-
-        # Masa butonlarının stilini güncelle (seçili masanın rengini değiştirmek için)
-        self._masa_butonlarini_olustur() # _masa_butonlarini_guncelle yerine tüm butonları yeniden oluştur
-
-
-    def _masanin_toplamini_guncelle(self, masa_no):
-        """Belirtilen masanın toplam tutarını masa_siparisleri tablosundan hesaplar ve masalar tablosunda günceller."""
-        try:
-            self.cursor.execute('''
-                SELECT COALESCE(SUM(tutar), 0) AS toplam_tutar
-                FROM masa_siparisleri
-                WHERE masa_no = ?
-            ''', (masa_no,))
-            toplam_row = self.cursor.fetchone()
-            yeni_toplam = toplam_row['toplam_tutar'] if toplam_row else 0.0
-
-            self.cursor.execute("UPDATE masalar SET toplam = ? WHERE masa_no = ?", (yeni_toplam, masa_no))
-            self.conn.commit()
-
-        except sqlite3.Error as e:
-            print(f"Masa toplamını güncelleme hatası (Masa {masa_no}): {e}")
-            self.conn.rollback()
-            messagebox.showerror("Veritabanı Hatası", f"Masa toplamı güncellenirken hata oluştu (Masa {masa_no}): {e}")
-        except Exception as e:
-            print(f"Masa toplamını güncelleme beklenmedik hata (Masa {masa_no}): {e}")
-            messagebox.showerror("Hata", f"Masa toplamı güncellenirken beklenmedik hata oluştu (Masa {masa_no}): {e}")
-
-
-    # --- Adisyon Sekmesi Fonksiyonları ---
-
-    def adisyon_arayuz_olustur(self):
-        """Adisyon sekmesi arayüzünü oluşturur"""
-        # Bilgi Frame (üst kısım, sabit yükseklik)
-        bilgi_frame = ttk.Frame(self.adisyon_frame)
-        bilgi_frame.pack(pady=PAD_Y, fill=tk.X)
-
-        self.aktif_masa_label = ttk.Label(bilgi_frame, text="Aktif Masa: Seçili değil", style="Baslik.TLabel")
-        self.aktif_masa_label.pack(side=tk.LEFT, padx=PAD_X)
-
-        self.musteri_label = ttk.Label(bilgi_frame, text="Müşteri: -", style="Bilgi.TLabel")
-        self.musteri_label.pack(side=tk.LEFT, padx=PAD_X)
-
-        # Müşteri Kümülatif Bakiye Etiketi
-        self.musteri_bakiye_adisyon_label = ttk.Label(bilgi_frame, text="Bakiye: 0 ₺", style="Bilgi.TLabel") # Başlangıç metni
-        self.musteri_bakiye_adisyon_label.pack(side=tk.LEFT, padx=PAD_X)
-
-        # Sağ tarafa saati ekle
-        self.saat_label = ttk.Label(bilgi_frame, text=self._tarih_saat_al_display_format(), style="Bilgi.TLabel")
-        self.saat_label.pack(side=tk.RIGHT)
-        # _saat_guncelle() __init__ içinde çağrılıyor
-
-
-        # Arama ve Kategori Filtreleme Frame
-        arama_filtre_frame = ttk.Frame(self.adisyon_frame)
-        arama_filtre_frame.pack(pady=PAD_Y, fill=tk.X)
-
-        # Arama Kısmı
-        arama_frame = ttk.Frame(arama_filtre_frame)
-        arama_frame.pack(side=tk.LEFT, padx=PAD_X, fill=tk.X, expand=True)
-
-        ttk.Label(arama_frame, text="Ürün Ara:", style="Bilgi.TLabel").pack(side=tk.LEFT)
-        self.urun_arama_entry = ttk.Entry(arama_frame)
-        self.urun_arama_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
-        self.urun_arama_entry.bind("<Return>", self._urun_ara)
-
-        # Kategori Filtreleme Kısmı
-        kategori_frame = ttk.Frame(arama_filtre_frame)
-        kategori_frame.pack(side=tk.RIGHT, padx=PAD_X)
-
-        ttk.Label(kategori_frame, text="Kategori Seç:", style="Bilgi.TLabel").pack(side=tk.LEFT)
-        self.kategori_filtre_combobox = ttk.Combobox(kategori_frame, state="readonly", width=20)
-        self.kategori_filtre_combobox.pack(side=tk.LEFT)
-
-        kategoriler = self._kategorileri_getir()
-        self.kategori_filtre_combobox['values'] = kategoriler
-
-        if "Tümü" in kategoriler:
-             self.kategori_filtre_combobox.set("Tümü")
-        self.kategori_filtre_combobox.bind("<<ComboboxSelected>>", self._filter_hizli_satis_buttons)
-
-        self._filter_hizli_satis_buttons() # İlk yüklemede butonları oluştur
-
-        # Hızlı Satış Butonları Alanı
-        self.hizli_satis_container = ttk.Frame(self.adisyon_frame)
-        self.hizli_satis_container.pack(pady=PAD_Y, fill=tk.BOTH, expand=True)
-
-        self.hizli_satis_canvas = tk.Canvas(self.hizli_satis_container, bg="#f0f0f0")
-        self.hizli_satis_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-
-        self.hizli_satis_scrollbar = ttk.Scrollbar(self.hizli_satis_container, orient=tk.VERTICAL, command=self.hizli_satis_canvas.yview)
-        self.hizli_satis_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-
-        self.hizli_satis_canvas.configure(yscrollcommand=self.hizli_satis_scrollbar.set)
-        self.hizli_satis_canvas.bind('<Configure>', lambda e: self.hizli_satis_canvas.itemconfigure("frame", width=self.hizli_satis_canvas.winfo_width()))
-
-        self.hizli_satis_frame = ttk.Frame(self.hizli_satis_canvas, style="HizliSatis.TFrame")
-        self.hizli_satis_canvas.create_window((0, 0), window=self.hizli_satis_frame, anchor="nw", tags="frame")
-
-        self.hizli_satis_frame.bind('<Configure>', lambda e: self.hizli_satis_canvas.config(scrollregion=self.hizli_satis_canvas.bbox("all")))
-
-
-        # Sepet Tablosu (Treeview kullanılıyor)
-        self.sepet_tablo = ttk.Treeview(self.adisyon_frame, columns=("Urun", "Fiyat", "Miktar", "Tutar"), show="headings", height=6)
-        self.sepet_tablo.heading("Urun", text="Ürün")
-        self.sepet_tablo.heading("Fiyat", text="Fiyat", anchor='e')
-        self.sepet_tablo.heading("Miktar", text="Miktar", anchor='e')
-        self.sepet_tablo.heading("Tutar", text="Tutar", anchor='e')
-        self.sepet_tablo.column("Urun", width=200, stretch=tk.YES)
-        self.sepet_tablo.column("Fiyat", width=80, stretch=tk.NO)
-        self.sepet_tablo.column("Miktar", width=80, stretch=tk.NO)
-        self.sepet_tablo.column("Tutar", width=100, stretch=tk.NO)
-        self.sepet_tablo.pack(pady=PAD_Y, fill=tk.BOTH, expand=True)
-        self.sepet_tablo.bind("<<TreeviewSelect>>", self._sepet_kalem_secildi) # Sepet kalem seçildiğinde
-
-        # Kontrol Frame
-        kontrol_frame = ttk.Frame(self.adisyon_frame)
-        kontrol_frame.pack(pady=PAD_Y, fill=tk.X)
-
-        ttk.Label(kontrol_frame, text="Adetli Ürün Miktarı:", style="Bilgi.TLabel").pack(side=tk.LEFT, padx=PAD_X)
-        self.miktar_spinbox = tk.Spinbox(kontrol_frame, from_=1, to=99, width=5, font=("Arial", 10))
-        self.miktar_spinbox.pack(side=tk.LEFT, padx=PAD_X)
-
-        ttk.Button(kontrol_frame, text="Sepete Ekle", style="EkleCikar.TButton", command=self._sepete_ekle_action).pack(side=tk.LEFT, padx=PAD_X)
-        ttk.Button(kontrol_frame, text="Seçileni Çıkar", style="EkleCikar.TButton", command=self._adisyon_kalem_sil).pack(side=tk.LEFT, padx=PAD_X) # _adisyon_kalem_sil olarak düzeltildi
-        ttk.Button(kontrol_frame, text="Sepeti Temizle", style="EkleCikar.TButton", command=self._sepeti_temizle).pack(side=tk.LEFT, padx=PAD_X)
-        ttk.Button(kontrol_frame, text="İndirim Uygula", style="Odeme.TButton", command=self.indirimi_uygula_action).pack(side=tk.LEFT, padx=PAD_X)
-
-
-        # Ödeme ve Toplam Frame
-        odeme_toplam_frame = ttk.Frame(self.adisyon_frame)
-        odeme_toplam_frame.pack(side=tk.BOTTOM, fill=tk.X, pady=PAD_Y)
-
-        # Ödeme Butonları (Sol tarafa)
-        odeme_button_frame = ttk.Frame(odeme_toplam_frame)
-        odeme_button_frame.pack(side=tk.LEFT, fill=tk.X, expand=True)
-
-        ttk.Button(odeme_button_frame, text="Masa Hesap Bilgisi", style="Odeme.TButton", command=self._nakit_odeme_bilgi).pack(side=tk.LEFT, padx=(0, PAD_X), fill=tk.X, expand=True)
-        ttk.Button(odeme_button_frame, text="Ara Ödeme Al", style="AraOdeme.TButton", command=self._ara_odeme).pack(side=tk.LEFT, padx=(0, PAD_X), fill=tk.X, expand=True)
-        ttk.Button(odeme_button_frame, text="Masa Kapat (Kart)", style="Kapat.TButton", command=lambda: self._odeme_yap("Kredi Kartı")).pack(side=tk.LEFT, padx=(0, PAD_X), fill=tk.X, expand=True)
-        ttk.Button(odeme_button_frame, text="Masa Kapat (Nakit)", style="Kapat.TButton", command=lambda: self._odeme_yap("Nakit")).pack(side=tk.LEFT, fill=tk.X, expand=True)
-        ttk.Button(odeme_button_frame, text="Masa Kapat (Veresiye)", style="Kapat.TButton", command=lambda: self._odeme_yap("Veresiye")).pack(side=tk.LEFT, padx=(0, PAD_X), fill=tk.X, expand=True)
-
-
-        # Toplam Etiketleri (Sağ tarafa)
-        toplam_label_frame = ttk.Frame(odeme_toplam_frame)
-        toplam_label_frame.pack(side=tk.RIGHT) # Sağ tarafa yerleştir
-
-        self.toplam_label = ttk.Label(toplam_label_frame, text="Toplam: 0 ₺", style="Toplam.TLabel")
-        self.toplam_label.pack(side=tk.RIGHT, padx=PAD_X)
-
-        self.iskonto_label = ttk.Label(toplam_label_frame, text="İskonto: 0 ₺", style="Toplam.TLabel")
-        self.iskonto_label.pack(side=tk.RIGHT, padx=PAD_X)
-
-        self.net_tutar_label = ttk.Label(toplam_label_frame, text="Net Tutar: 0 ₺", style="Toplam.TLabel")
-        self.net_tutar_label.pack(side=tk.RIGHT, padx=PAD_X)
-
-
-    def _sepete_ekle_action(self):
-        """Hızlı satıştan seçilen ürünü aktif masanın sepetine ekler."""
-        # Bu fonksiyon _urun_ekle_hizli_satis fonksiyonunu çağırmalıdır.
-        # _urun_ekle_hizli_satis fonksiyonu, tıklanan butonun bilgisini alarak işlem yapar.
-        # Bu buton, adisyon_arayuz_olustur içinde hızlı satış butonlarına atanır.
-        # Yani, bu fonksiyon doğrudan çağrılmaz, hızlı satış butonuna tıklandığında _urun_ekle_hizli_satis çağrılır.
-        # Ancak, eğer ayrı bir "Sepete Ekle" butonu varsa, bu butona tıklanınca
-        # seçili hızlı satış ürünü veya manuel girilen ürün sepete eklenmelidir.
-        # Mevcut arayüzde "Sepete Ekle" butonu var ve bu _sepete_ekle_action'ı çağırıyor.
-        # Bu butonın işlevi, hızlı satış alanından seçili bir ürün varsa onu eklemek olmalıdır.
-
-        # Hızlı satış alanından seçili ürünü bulma mekanizması eklenmeli.
-        # Şu anki yapıda, hızlı satış butonlarına tıklamak doğrudan _urun_ekle_hizli_satis'i çağırıyor.
-        # Eğer bu "Sepete Ekle" butonu kullanılacaksa, hızlı satış alanından
-        # hangi ürünün seçili olduğunu takip etmemiz gerekir.
-        # Şimdilik bu butonun işlevselliği eksik kalacaktır.
-
-        # Alternatif olarak, bu butona tıklanınca bir ürün seçme penceresi açılabilir.
-        # Veya, hızlı satış butonlarına tıklamak yerine, ürünleri Listbox'a ekleyip oradan seçim yapılabilir.
-        # Mevcut arayüzde hızlı satış butonları doğrudan ekleme yapıyor.
-        # Bu "Sepete Ekle" butonu muhtemelen gereksiz veya farklı bir amaçla kullanılmalı.
-
-        # Geçici olarak bir uyarı mesajı ekleyelim:
-        messagebox.showinfo("Bilgi", "Bu 'Sepete Ekle' butonu henüz aktif değil.\nLütfen ürünleri hızlı satış butonlarına tıklayarak ekleyin.", parent=self.adisyon_frame)
-        pass # Fonksiyon şu an için bir işlem yapmıyor
-
-
-    def _urun_ekle_hizli_satis(self, urun_adi):
-        """Hızlı satış butonuna tıklanarak ürünü aktif masanın adisyonuna ekler."""
-        if not self.aktif_masa:
-            messagebox.showwarning("Uyarı", "Önce bir masa seçmelisiniz!", parent=self.adisyon_frame)
-            return
-
-        masa_no = self.aktif_masa
-
-        try:
-            # Ürün fiyatını veritabanından çek
-            self.cursor.execute("SELECT fiyat FROM urunler WHERE urun_adi = ?", (urun_adi,))
-            urun_info = self.cursor.fetchone()
-            if not urun_info:
-                messagebox.showerror("Hata", f"Ürün bilgisi bulunamadı: {urun_adi}", parent=self.adisyon_frame)
-                return
-            fiyat = urun_info['fiyat']
-
-            # Miktarı spinbox'tan al
-            try:
-                miktar = int(self.miktar_spinbox.get())
-                if miktar <= 0:
-                    messagebox.showwarning("Uyarı", "Miktar 1 veya daha büyük olmalıdır.", parent=self.adisyon_frame)
-                    return
-            except ValueError:
-                messagebox.showwarning("Uyarı", "Geçerli bir miktar girin.", parent=self.adisyon_frame)
-                return
-
-            tutar = fiyat * miktar
-
-            # Masanın durumunu kontrol et, boşsa dolu yap ve açılış zamanını kaydet
-            self.cursor.execute("SELECT durum FROM masalar WHERE masa_no = ?", (masa_no,))
-            masa_durum = self.cursor.fetchone()['durum']
-
-            current_time = self._tarih_saat_al_db_format()
-
-            if masa_durum == 'boş':
-                self.cursor.execute('''
-                    UPDATE masalar
-                    SET durum = 'dolu', acilis = ?, son_adisyon_zamani = ?, son_islem_zamani = ?
-                    WHERE masa_no = ?
-                ''', (current_time, current_time, current_time, masa_no))
-            else:
-                 # Masa doluysa sadece son işlem zamanını güncelle
-                 self.cursor.execute('''
-                     UPDATE masalar
-                     SET son_adisyon_zamani = ?, son_islem_zamani = ?
-                     WHERE masa_no = ?
-                 ''', (current_time, current_time, masa_no))
-
-
-            # Ürünü masa siparişlerine ekle veya miktarını artır
-            # Burada UNIQUE kısıtlaması olduğu için INSERT OR REPLACE veya SELECT ve UPDATE/INSERT yapılmalı
-            self.cursor.execute("SELECT id, miktar FROM masa_siparisleri WHERE masa_no = ? AND urun_adi = ?", (masa_no, urun_adi))
-            existing_item = self.cursor.fetchone()
-
-            if existing_item:
-                # Eğer aynı ürün varsa miktarı ve tutarı güncelle
-                new_miktar = existing_item['miktar'] + miktar
-                new_tutar = new_miktar * fiyat
-                self.cursor.execute('''
-                    UPDATE masa_siparisleri
-                    SET miktar = ?, tutar = ?
-                    WHERE id = ?
-                ''', (new_miktar, new_tutar, existing_item['id']))
-            else:
-                # Ürün yoksa yeni satır ekle
-                self.cursor.execute('''
-                    INSERT INTO masa_siparisleri (masa_no, urun_adi, fiyat, miktar, tutar, eklenme_zamani)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                ''', (masa_no, urun_adi, fiyat, miktar, tutar, current_time))
-
-            # Masanın toplam tutarını güncelle
-            self._masanin_toplamini_guncelle(masa_no)
-
-            self.conn.commit()
-            self._sepeti_yukle() # Adisyon listesini yenile
-            self._masa_butonlarini_olustur() # Masa butonundaki toplamı ve durumu güncelle
-
-        except sqlite3.Error as e:
-            messagebox.showerror("Veritabanı Hatası", f"Ürün adisyona eklenirken hata oluştu: {e}", parent=self.adisyon_frame)
-            self.conn.rollback()
-        except Exception as e:
-            messagebox.showerror("Hata", f"Ürün adisyona eklenirken beklenmedik hata: {e}", parent=self.adisyon_frame)
-            print(f"Ürün adisyon ekleme hatası: {e}")
-
-
-    def _sepet_kalem_secildi(self, event):
-        """Sepet Treeview'ında bir kalem seçildiğinde miktar spinbox'ını günceller."""
-        selected_item = self.sepet_tablo.selection()
-        if not selected_item:
-            self._miktar_spinbox_reset() # Seçim kalkarsa spinbox'ı sıfırla
-            return
-
-        # Seçilen öğenin değerlerini al
-        item_values = self.sepet_tablo.item(selected_item, 'values')
-
-        if len(item_values) >= 3: # En az ürün adı, fiyat ve miktar sütunları olmalı
-            try:
-                miktar = int(item_values[2]) # Miktar 3. sütunda (index 2)
-                self.miktar_spinbox.delete(0, tk.END)
-                self.miktar_spinbox.insert(0, str(miktar))
-            except ValueError:
-                print(f"Hata: Seçilen sepet kaleminden miktar alınamadı: {item_values}")
-                self._miktar_spinbox_reset() # Hata durumunda spinbox'ı sıfırla
-            except Exception as e:
-                 print(f"Beklenmedik hata oluştu (_sepet_kalem_secildi): {e}")
-                 self._miktar_spinbox_reset() # Hata durumunda spinbox'ı sıfırla
-        else:
-             self._miktar_spinbox_reset() # Seçim geçersizse spinbox'ı sıfırla
-
-
-    def _miktar_spinbox_reset(self):
-         """Miktar spinbox'ını varsayılan değerine (1) ayarlar."""
-         if hasattr(self, 'miktar_spinbox'):
-             self.miktar_spinbox.delete(0, tk.END)
-             self.miktar_spinbox.insert(0, "1")
-
-
-    def _adisyon_kalem_miktar_guncelle(self):
-        """Sepette seçili olan kalemin miktarını günceller."""
-        selected_item = self.sepet_tablo.selection()
-        if not selected_item:
-            messagebox.showwarning("Uyarı", "Lütfen önce sepetten bir ürün seçin.", parent=self.adisyon_frame)
-            return
-
-        if not self.aktif_masa:
-            messagebox.showwarning("Uyarı", "Aktif masa seçili değil.", parent=self.adisyon_frame)
-            return
-
-        masa_no = self.aktif_masa
-
-        try:
-            yeni_miktar = int(self.miktar_spinbox.get())
-            if yeni_miktar <= 0:
-                messagebox.showwarning("Uyarı", "Miktar 1 veya daha büyük olmalıdır.", parent=self.adisyon_frame)
-                return
-
-            # Seçilen öğenin mevcut değerlerini al
-            item_values = self.sepet_tablo.item(selected_item, 'values')
-            if len(item_values) < 2: # Ürün adı ve fiyat olmalı
-                 messagebox.showwarning("Hata", "Seçili sepet kalem bilgisi eksik.", parent=self.adisyon_frame)
-                 return
-
-            urun_adi = item_values[0]
-            # Fiyatı string'den float'a çevirirken ' ₺' karakterini temizle
-            fiyat = float(item_values[1].replace(' ₺', '').strip())
-
-
-            # Veritabanında ilgili sipariş kalemini bul ve güncelle
-            # masa_siparisleri tablosunda UNIQUE(masa_no, urun_adi) kısıtlaması olduğu için
-            # urun_adi ve masa_no ile bulabiliriz.
-            self.cursor.execute('''
-                SELECT id FROM masa_siparisleri
-                WHERE masa_no = ? AND urun_adi = ?
-            ''', (masa_no, urun_adi))
-            siparis_kalem_row = self.cursor.fetchone()
-
-            if not siparis_kalem_row:
-                 messagebox.showerror("Hata", "Güncellenecek sipariş kalemi veritabanında bulunamadı.", parent=self.adisyon_frame)
-                 self._sepeti_yukle() # Sepeti yeniden yükleyerek UI'ı senkronize et
-                 return
-
-            siparis_kalem_id = siparis_kalem_row['id']
-            yeni_tutar = yeni_miktar * fiyat
-
-            self.cursor.execute('''
-                UPDATE masa_siparisleri
-                SET miktar = ?, tutar = ?
-                WHERE id = ?
-            ''', (yeni_miktar, yeni_tutar, siparis_kalem_id))
-
-            # Masanın toplam tutarını güncelle
-            self._masanin_toplamini_guncelle(masa_no)
-
-            self.conn.commit()
-            self._sepeti_yukle() # Adisyon listesini yenile
-            self._masa_butonlarini_olustur() # Masa butonundaki toplamı güncelle
-
-        except ValueError:
-            messagebox.showwarning("Uyarı", "Geçerli bir sayısal miktar girin.", parent=self.adisyon_frame)
-        except sqlite3.Error as e:
-            messagebox.showerror("Veritabanı Hatası", f"Sipariş miktarı güncellenirken hata oluştu: {e}", parent=self.adisyon_frame)
-            self.conn.rollback()
-        except Exception as e:
-            messagebox.showerror("Hata", f"Sipariş miktarı güncellenirken beklenmedik hata: {e}", parent=self.adisyon_frame)
-            print(f"Miktar güncelleme hatası: {e}")
-
-
-    def _adisyon_kalem_sil(self):
-        """Sepette seçili olan kalemi siler."""
-        selected_item = self.sepet_tablo.selection()
-        if not selected_item:
-            messagebox.showwarning("Uyarı", "Lütfen önce sepetten bir ürün seçin.", parent=self.adisyon_frame)
-            return
-
-        if not self.aktif_masa:
-            messagebox.showwarning("Uyarı", "Aktif masa seçili değil.", parent=self.adisyon_frame)
-            return
-
-        masa_no = self.aktif_masa
-
-        # Seçilen öğenin mevcut değerlerini al
-        item_values = self.sepet_tablo.item(selected_item, 'values')
-        if len(item_values) < 1: # Ürün adı olmalı
-             messagebox.showwarning("Hata", "Seçili sepet kalem bilgisi eksik.", parent=self.adisyon_frame)
-             return
-        urun_adi = item_values[0]
-
-
-        if not messagebox.askyesno("Silme Onayı", f"{urun_adi} ürününü sepetten silmek istediğinize emin misiniz?", parent=self.adisyon_frame):
-            return
-
-        try:
-            # Veritabanında ilgili sipariş kalemini bul ve sil
-            self.cursor.execute('''
-                DELETE FROM masa_siparisleri
-                WHERE masa_no = ? AND urun_adi = ?
-            ''', (masa_no, urun_adi))
-
-            # Masanın toplam tutarını güncelle
-            self._masanin_toplamini_guncelle(masa_no)
-
-            self.conn.commit()
-            self._sepeti_yukle() # Adisyon listesini yenile
-            self._masa_butonlarini_olustur() # Masa butonundaki toplamı ve durumu güncelle
-
-            # Eğer sepet boşaldıysa masanın durumunu 'boş' yap
-            self.cursor.execute("SELECT COUNT(*) FROM masa_siparisleri WHERE masa_no = ?", (masa_no,))
-            kalan_urun_sayisi = self.cursor.fetchone()[0]
-            if kalan_urun_sayisi == 0:
-                 self.cursor.execute("UPDATE masalar SET durum = 'boş', musteri_id = NULL, acilis = NULL, son_adisyon_zamani = NULL WHERE masa_no = ?", (masa_no,))
-                 self.conn.commit()
-                 self._masa_butonlarini_olustur() # Masa butonunu boş olarak güncelle
-                 self.aktif_masa = None # Aktif masayı sıfırla
-                 if hasattr(self, 'aktif_masa_label'):
-                      self.aktif_masa_label.config(text="Aktif Masa: Seçili değil")
-                 if hasattr(self, 'musteri_label'):
-                      self.musteri_label.config(text="Müşteri: -")
-                 if hasattr(self, 'musteri_bakiye_adisyon_label'):
-                      self.musteri_bakiye_adisyon_label.config(text="Bakiye: 0 ₺")
-
-
-        except sqlite3.Error as e:
-            messagebox.showerror("Veritabanı Hatası", f"Sipariş kalemi silinirken hata oluştu: {e}", parent=self.adisyon_frame)
-            self.conn.rollback()
-        except Exception as e:
-            messagebox.showerror("Hata", f"Sipariş kalemi silinirken beklenmedik hata: {e}", parent=self.adisyon_frame)
-            print(f"Kalem silme hatası: {e}")
-
-
-    def _sepeti_temizle(self):
-        """Aktif masanın sepetini veritabanından ve UI'dan tamamen temizler."""
-        if not self.aktif_masa:
-            messagebox.showwarning("Uyarı", "Aktif masa seçili değil.", parent=self.adisyon_frame)
-            return
-
-        masa_no = self.aktif_masa
-
-        if not messagebox.askyesno("Sepeti Temizle Onayı", f"Masa {masa_no}'nun sepetini tamamen temizlemek istediğinize emin misiniz?", parent=self.adisyon_frame):
-            return
-
-        try:
-            # Masa siparişlerini veritabanından sil
-            self.cursor.execute("DELETE FROM masa_siparisleri WHERE masa_no = ?", (masa_no,))
-
-            # Ara ödemeleri veritabanından sil
-            self.cursor.execute("DELETE FROM ara_odemeler WHERE masa_no = ?", (masa_no,))
-
-            # Masanın toplamını sıfırla ve durumu boş yap
-            self.cursor.execute('''
-                UPDATE masalar
-                SET durum = 'boş', toplam = 0, musteri_id = NULL,
-                acilis = NULL, kapanis = NULL, son_adisyon_zamani = NULL, son_islem_zamani = ?
-                WHERE masa_no = ?
-            ''', (self._tarih_saat_al_db_format(), masa_no))
-
-
-            self.conn.commit()
-            self._sepeti_temizle_ui_only() # UI'ı temizle
-            self._masa_butonlarini_olustur() # Masa butonunu boş olarak güncelle
-
-            messagebox.showinfo("Başarılı", f"Masa {masa_no} sepeti temizlendi.", parent=self.adisyon_frame)
-
-        except sqlite3.Error as e:
-            messagebox.showerror("Veritabanı Hatası", f"Sepet temizlenirken hata oluştu: {e}", parent=self.adisyon_frame)
-            self.conn.rollback()
-        except Exception as e:
-            messagebox.showerror("Hata", f"Sepet temizlenirken beklenmedik hata: {e}", parent=self.adisyon_frame)
-            print(f"Sepet temizleme hatası: {e}")
-
-
-    def _sepeti_temizle_ui_only(self):
-        """Sadece kullanıcı arayüzündeki sepet listesini ve toplam etiketlerini temizler."""
-        # Kontrol et: self.sepet_tablo Treeview widget'ı tanımlı mı?
-        if hasattr(self, 'sepet_tablo') and isinstance(self.sepet_tablo, ttk.Treeview):
-             for item in self.sepet_tablo.get_children():
-                 self.sepet_tablo.delete(item)
-        # else:
-        #     print("Uyarı: self.sepet_tablo Treeview widget'ı tanımlı değil veya doğru tipte değil.")
-
-
-        # Toplamları sıfırla (UI etiketleri varsa)
-        if hasattr(self, 'toplam_label'):
-             self.toplam_label.config(text="Toplam: 0 ₺")
-        if hasattr(self, 'iskonto_label'):
-             self.iskonto_label.config(text="İskonto: 0 ₺")
-        if hasattr(self, 'net_tutar_label'):
-             self.net_tutar_label.config(text="Net Tutar: 0 ₺")
-
-
-        # Müşteri ve bakiye etiketlerini de sıfırla
-        if hasattr(self, 'musteri_label'):
-             self.musteri_label.config(text="Müşteri: -")
-        if hasattr(self, 'musteri_bakiye_adisyon_label'):
-             self.musteri_bakiye_adisyon_label.config(text="Bakiye: 0 ₺")
-
-        # Miktar spinbox'ını sıfırla
-        self._miktar_spinbox_reset()
-
-        # Aktif masa seçimini kaldır
-        self.aktif_masa = None
-        if hasattr(self, 'aktif_masa_label'):
-            self.aktif_masa_label.config(text="Aktif Masa: Seçili değil")
-
-        # Masa butonlarını güncelle (tüm masalar boş görünecek)
-        self._masa_butonlarini_olustur() # _masa_butonlarini_guncelle yerine _masa_butonlarini_olustur çağrıldı
-
-
-    def _sepeti_yukle(self):
-        """Aktif masanın siparişlerini sepet Treeview'ına yükler ve UI'ı günceller (Müşteri bilgisi ve Bakiye dahil)"""
-        # Kontrol et: self.sepet_tablo Treeview widget'ı tanımlı mı?
-        if not hasattr(self, 'sepet_tablo') or not isinstance(self.sepet_tablo, ttk.Treeview):
-             print("Hata: self.sepet_tablo Treeview widget'ı tanımlı değil veya doğru tipte değil.")
-             # Hata mesajı gösterebilir veya sessizce geçebiliriz
-             # messagebox.showerror("UI Hatası", "Sepet görüntüleme alanı bulunamadı.")
-             # UI güncellemelerine devam etme, sadece veritabanı işlemleri yapılır
-             self._sepeti_temizle_ui_only() # UI elementleri yoksa hata vermez
-             return
-
-        # Sepeti temizle
-        for item in self.sepet_tablo.get_children():
-            self.sepet_tablo.delete(item)
-
-        # Toplamları sıfırla (UI etiketleri varsa)
-        if hasattr(self, 'toplam_label'):
-             self.toplam_label.config(text="Toplam: 0 ₺")
-        if hasattr(self, 'iskonto_label'):
-             self.iskonto_label.config(text="İskonto: 0 ₺")
-        if hasattr(self, 'net_tutar_label'):
-             self.net_tutar_label.config(text="Net Tutar: 0 ₺")
-
-
-        # Müşteri ve Bakiye etiketlerini varsayılana ayarla (UI elementleri varsa)
-        if hasattr(self, 'musteri_label'):
-             self.musteri_label.config(text="Müşteri: -")
-        if hasattr(self, 'musteri_bakiye_adisyon_label'):
-             self.musteri_bakiye_adisyon_label.config(text="Bakiye: 0 ₺")
-
-        self.toplam_tutar = 0.0 # Masa toplamını hesaplamak için sıfırla
-        self.iskonto = 0.0 # İskonto hesaplamak için sıfırla
-
-        if self.aktif_masa:
-            # Aktif masanın siparişlerini çek
-            try:
-                self.cursor.execute('''
-                    SELECT urun_adi, fiyat, miktar, tutar
-                    FROM masa_siparisleri
-                    WHERE masa_no = ?
-                ''', (self.aktif_masa,))
-
-                siparisler = self.cursor.fetchall() # row_factory sayesinde sütun isimleriyle erişilir
-
-                # Sepet Treeview'ına siparişleri ekle ve toplam tutarı hesapla
-                for siparis in siparisler:
-                    self.sepet_tablo.insert("", tk.END, values=(
-                        siparis['urun_adi'],
-                        f"{siparis['fiyat']:.0f} ₺",
-                        siparis['miktar'],
-                        f"{siparis['tutar']:.0f} ₺"
-                    ))
-                    self.toplam_tutar += siparis['tutar'] # Toplam tutarı hesapla
-
-            except sqlite3.Error as e:
-                 print(f"Sepet siparişleri çekme hatası: {e}")
-                 # Hata durumunda UI'ı temizleyebiliriz
-                 self.sepet_tablo.delete(*self.sepet_tablo.get_children())
-                 if hasattr(self, 'toplam_label'):
-                      self.toplam_label.config(text="Toplam: Hata!")
-                 if hasattr(self, 'iskonto_label'):
-                      self.iskonto_label.config(text="İskonto: Hata!")
-                 if hasattr(self, 'net_tutar_label'):
-                      self.net_tutar_label.config(text="Net Tutar: Hata!")
-                 if hasattr(self, 'musteri_label'):
-                      self.musteri_label.config(text="Müşteri: Hata!")
-                 if hasattr(self, 'musteri_bakiye_adisyon_label'):
-                      self.musteri_bakiye_adisyon_label.config(text="Bakiye: Hata!")
-                 return # İşleme devam etme
-
-
-            # Masanın müşteri ID'sini çek
-            musteri_id = None
-            try:
-                 self.cursor.execute("SELECT musteri_id FROM masalar WHERE masa_no = ?", (self.aktif_masa,))
-                 masa_info = self.cursor.fetchone()
-                 musteri_id = masa_info['musteri_id'] if masa_info else None
-
-                 if musteri_id:
-                     try:
-                         self.cursor.execute("SELECT ad, cumulative_balance FROM musteriler WHERE musteri_id = ?", (musteri_id,)) # cumulative_balance çekildi
-                         musteri = self.cursor.fetchone() # row_factory sayesinde sütun isimleriyle erişilir
-                         if musteri: # Müşteri bulunduysa
-                             if hasattr(self, 'musteri_label'):
-                                  self.musteri_label.config(text=f"Müşteri: {musteri['ad']}")
-                             if hasattr(self, 'musteri_bakiye_adisyon_label'):
-                                  # Kümülatif bakiye etiketini güncelle (formatlı)
-                                  bakiye = musteri['cumulative_balance'] if musteri['cumulative_balance'] is not None else 0.0
-                                  self.musteri_bakiye_adisyon_label.config(text=f"Bakiye: {bakiye:.0f} ₺")
-                         else: # Müşteri ID var ama müşteri bulunamadı (DB tutarsızlığı)
-                             if hasattr(self, 'musteri_label'):
-                                  self.musteri_label.config(text="Müşteri: Bulunamadı")
-                             if hasattr(self, 'musteri_bakiye_adisyon_label'):
-                                  self.musteri_bakiye_adisyon_label.config(text="Bakiye: ? ₺")
-
-                     except sqlite3.Error as e:
-                          print(f"Müşteri bilgisi çekme hatası: {e}")
-                          if hasattr(self, 'musteri_label'):
-                               self.musteri_label.config(text="Müşteri: Hata!")
-                          if hasattr(self, 'musteri_bakiye_adisyon_label'):
-                               self.musteri_bakiye_adisyon_label.config(text="Bakiye: Hata!")
-                     except Exception as e:
-                          print(f"Müşteri bilgisi çekme beklenmedik hata: {e}")
-                          if hasattr(self, 'musteri_label'):
-                               self.musteri_label.config(text="Müşteri: Hata!")
-                          if hasattr(self, 'musteri_bakiye_adisyon_label'):
-                               self.musteri_bakiye_adisyon_label.config(text="Bakiye: Hata!")
-
-                 # Müşteri ID yoksa etiketleri varsayılana ayarla (fonksiyon başında yapılıyor)
-                 # else:
-                 #     if hasattr(self, 'musteri_label'):
-                 #          self.musteri_label.config(text="Müşteri: -")
-                 #     if hasattr(self, 'musteri_bakiye_adisyon_label'):
-                 #          self.musteri_bakiye_adisyon_label.config(text="Bakiye: 0 ₺")
-
-
-            except sqlite3.Error as e:
-                 print(f"Masa müşteri ID çekme hatası: {e}")
-                 if hasattr(self, 'musteri_label'):
-                      self.musteri_label.config(text="Müşteri: Hata!")
-                 if hasattr(self, 'musteri_bakiye_adisyon_label'):
-                      self.musteri_bakiye_adisyon_label.config(text="Bakiye: Hata!")
-            except Exception as e:
-                 print(f"Masa müşteri ID çekme beklenmedik hata: {e}")
-                 if hasattr(self, 'musteri_label'):
-                      self.musteri_label.config(text="Müşteri: Hata!")
-                 if hasattr(self, 'musteri_bakiye_adisyon_label'):
-                      self.musteri_bakiye_adisyon_label.config(text="Bakiye: Hata!")
-
-
-            # Ara ödemeler toplamını çek
-            try:
-                self.cursor.execute('''
-                    SELECT COALESCE(SUM(miktar), 0) as ara_odeme_toplam FROM ara_odemeler
-                    WHERE masa_no = ?
-                ''', (self.aktif_masa,))
-                ara_odeme_row = self.cursor.fetchone() # row_factory sayesinde sütun isimleriyle erişilir
-                ara_odeme_toplam = ara_odeme_row['ara_odeme_toplam'] if ara_odeme_row and 'ara_odeme_toplam' in ara_odeme_row and ara_odeme_row['ara_odeme_toplam'] is not None else 0.0
-
-            except sqlite3.Error as e:
-                 print(f"Ara ödeme toplamı çekme hatası: {e}")
-                 ara_odeme_toplam = 0.0 # Hata durumunda ara ödemeyi sıfır kabul et
-            except Exception as e:
-                 print(f"Ara ödeme toplamı çekme beklenmedik hata: {e}")
-                 ara_odeme_toplam = 0.0 # Hata durumunda ara ödemeyi sıfır kabul et
-
-
-            # Toplam UI etiketlerini güncelle (ara ödeme dahil)
-            self._toplam_guncelle_ui(ara_odeme_toplam)
-
-        # else: # Aktif masa yoksa - Zaten fonksiyon başında sıfırlanıyor
-        #     pass # UI sıfırlama zaten yapıldı
-
-
-    def _toplam_guncelle_ui(self, ara_odeme_toplam=0.0):
-        """Adisyon sekmesindeki toplam, iskonto ve net tutar etiketlerini günceller."""
-        # Kontrol et: Toplam etiketleri tanımlı mı?
-        if not hasattr(self, 'toplam_label') or not hasattr(self, 'iskonto_label') or not hasattr(self, 'net_tutar_label'):
-             print("Uyarı: Toplam UI etiketleri tanımlı değil.")
-             return # Etiketler yoksa güncelleme yapma
-
-
-        # Toplam tutar _sepeti_yukle içinde hesaplanıyor
-        # İskonto şu an için 0, ileride iskonto özelliği eklenirse burada hesaplanır
-        self.iskonto = 0.0
-
-        # Net Tutar = Toplam Tutar - İskonto - Ara Ödemeler
-        net_tutar = self.toplam_tutar - self.iskonto - ara_odeme_toplam
-
-        self.toplam_label.config(text=f"Toplam: {self.toplam_tutar:.0f} ₺")
-        self.iskonto_label.config(text=f"İskonto: {self.iskonto:.0f} ₺")
-        self.net_tutar_label.config(text=f"Net Tutar: {max(0.0, net_tutar):.0f} ₺") # Negatif olmaması için max(0.0, ...)
-
-
-    def _nakit_odeme_bilgi(self):
-        """Masa hesap bilgisini (toplam, ara ödeme, kalan, kümülatif bakiye, toplam borç) gösterir"""
-        if not self.aktif_masa:
-            messagebox.showwarning("Uyarı", "Önce bir masa seçmelisiniz!", parent=self.adisyon_frame)
-            return
-
-        masa_no = self.aktif_masa
-
-        try:
-            # Masanın toplam tutarını ve müşteri ID'sini al
-            self.cursor.execute("SELECT toplam, musteri_id FROM masalar WHERE masa_no = ?", (masa_no,))
-            masa_info = self.cursor.fetchone()
-
-            if not masa_info:
-                 messagebox.showwarning("Uyarı", f"Masa {masa_no} bilgisi bulunamadı!", parent=self.adisyon_frame)
-                 return
-
-            masa_oturum_toplami = masa_info['toplam'] if masa_info['toplam'] is not None else 0.0
-            musteri_id = masa_info['musteri_id']
-            current_cumulative_balance = 0.0 # Müşterinin kümülatif bakiyesi
-
-            # Müşteri bilgisi varsa kümülatif bakiyesini çek
-            musteri_adi = "Misafir"
-            if musteri_id:
-                self.cursor.execute("SELECT ad, soyad, cumulative_balance FROM musteriler WHERE musteri_id = ?", (musteri_id,))
-                musteri = self.cursor.fetchone()
-                if musteri:
-                    musteri_adi = f"{musteri['ad']} {musteri['soyad']}".strip() if musteri['ad'] or musteri['soyad'] else "Misafir"
-                    current_cumulative_balance = musteri['cumulative_balance'] if musteri['cumulative_balance'] is not None else 0.0
-
-
-            # Masanın ara ödemeler toplamını al
-            self.cursor.execute('''
-                SELECT COALESCE(SUM(miktar), 0) as ara_odeme_toplam FROM ara_odemeler
-                WHERE masa_no = ?
-            ''', (masa_no,))
-            ara_odeme_row = self.cursor.fetchone()
-            # Anahtar adı 'ara_odeme_toplam' olarak kullanılmalı
-            ara_odemeler_toplam = ara_odeme_row['ara_odeme_toplam'] if ara_odeme_row and 'ara_odeme_toplam' in ara_odeme_row and ara_odeme_row['ara_odeme_toplam'] is not None else 0.0
-
-            # Toplam Borç = Müşterinin Kümülatif Bakiyesi + Masa Oturumu Toplamı
-            total_owed = current_cumulative_balance + masa_oturum_toplami
-
-            # Kalan Tutar = Toplam Borç - Yapılan Ara Ödemeler (Bu pencere için hesaplanan kalan)
-            kalan_tutar_bu_pencere = total_owed - ara_odemeler_toplam
-
-            # Mesaj metni formatlama
-            message_text = f"Masa: {masa_no}"
-            if musteri_id:
-                 message_text += f" ({musteri_adi})"
-            message_text += "\n\n"
-            message_text += f"Masa Oturumu Toplamı: {masa_oturum_toplami:.0f} ₺\n"
-            message_text += f"Müşteri Kümülatif Bakiye: {current_cumulative_balance:.0f} ₺\n"
-            message_text += "-"*30 + "\n"
-            message_text += f"Toplam Borç: {total_owed:.0f} ₺\n"
-            if ara_odemeler_toplam > 0:
-                 message_text += f"Yapılan Ara Ödemeler: {ara_odemeler_toplam:.0f} ₺\n"
-                 message_text += f"Ödenecek Tutar: {max(0.0, kalan_tutar_bu_pencere):.0f} ₺\n"
-            else:
-                 message_text += f"Ödenecek Tutar: {max(0.0, total_owed):.0f} ₺\n"
-
-            message_text += "\nÖdeme almak için 'Masa Kapat' veya 'Ara Ödeme Al' butonlarını kullanın."
-
-
-            messagebox.showinfo(
-                "Masa Hesap Bilgisi",
-                message_text
-                , parent=self.adisyon_frame
+            self.show_error("Tablo oluşturma hatası", str(e))
+    
+    def insert_default_data(self):
+        # Varsayılan admin kullanıcısı
+        if not self.get_one("SELECT id FROM users WHERE username = 'admin'"):
+            hashed_pw = hashlib.sha256("admin123".encode()).hexdigest()
+            self.execute(
+                "INSERT INTO users (username, password, full_name, role) VALUES (?, ?, ?, ?)",
+                ("admin", hashed_pw, "Admin User", "admin"),
+                commit=True
             )
-
-        except sqlite3.Error as e:
-             messagebox.showerror("Veritabanı Hatası", f"Masa hesap bilgisi alınırken hata oluştu: {e}", parent=self.adisyon_frame)
-             print(f"Masa hesap bilgi hatası: {e}")
-        except Exception as e:
-             messagebox.showerror("Hata", f"Masa hesap bilgisi alınırken beklenmedik hata: {e}", parent=self.adisyon_frame)
-             print(f"Masa hesap bilgi beklenmedik hata: {e}")
-
-
-    def _ara_odeme(self):
-        """Aktif masadan ara ödeme alır, kaydeder ve müşteri bakiyesini günceller"""
-        if not self.aktif_masa:
-            messagebox.showwarning("Uyarı", "Önce bir masa seçmelisiniz!", parent=self.adisyon_frame)
-            return
-
-        masa_no = self.aktif_masa
-
-        try:
-            # Masanın toplam tutarını ve müşteri ID'sini al
-            self.cursor.execute("SELECT toplam, musteri_id FROM masalar WHERE masa_no = ?", (masa_no,))
-            masa_info = self.cursor.fetchone()
-
-            if not masa_info:
-                 messagebox.showwarning("Uyarı", f"Masa {masa_no} bilgisi bulunamadı!", parent=self.adisyon_frame)
-                 return
-
-            masa_oturum_toplami = masa_info['toplam'] if masa_info['toplam'] is not None else 0.0
-            musteri_id = masa_info['musteri_id']
-            current_cumulative_balance = 0.0 # Müşterinin kümülatif bakiyesi
-
-            # Müşteri bilgisi varsa kümülatif bakiyesini çek
-            musteri_adi = "Misafir"
-            if musteri_id:
-                self.cursor.execute("SELECT ad, soyad, cumulative_balance FROM musteriler WHERE musteri_id = ?", (musteri_id,))
-                musteri = self.cursor.fetchone()
-                if musteri:
-                    musteri_adi = f"{musteri['ad']} {musteri['soyad']}".strip() if musteri['ad'] or musteri['soyad'] else "Misafir"
-                    current_cumulative_balance = musteri['cumulative_balance'] if musteri['cumulative_balance'] is not None else 0.0
-                else:
-                    # Müşteri ID var ama müşteri bulunamadı (DB tutarsızlığı)
-                    messagebox.showwarning("Uyarı", f"Masa {masa_no} ile ilişkili müşteri bulunamadı!", parent=self.adisyon_frame)
-                    return # Müşteri yoksa ara ödeme alımını iptal et
-
-
-            # Masanın ara ödemeler toplamını al (Ayrı sorgu)
-            self.cursor.execute('''
-                SELECT COALESCE(SUM(miktar), 0) as ara_odeme_toplam FROM ara_odemeler
-                WHERE masa_no = ?
-            ''', (masa_no,))
-            ara_odeme_row = self.cursor.fetchone()
-            # Anahtar adı 'ara_odeme_toplam' olarak kullanılmalı
-            ara_odemeler_toplam = ara_odeme_row['ara_odeme_toplam'] if ara_odeme_row and 'ara_odeme_toplam' in ara_odeme_row and ara_odeme_row['ara_odeme_toplam'] is not None else 0.0
-
-            # Toplam Borç = Müşterinin Kümülatif Bakiyesi + Masa Oturumu Toplamı
-            total_owed = current_cumulative_balance + masa_oturum_toplami
-
-            # Kalan Tutar (Bu ara ödeme sonrası ödenecek olan) = Toplam Borç - Yapılan Ara Ödemeler
-            kalan_tutar_odeme_sonrasi = total_owed - ara_odemeler_toplam
-
-            if kalan_tutar_odeme_sonrasi <= 0:
-                 messagebox.showwarning("Uyarı", f"Bu masanın zaten ödemesi tamamlanmış veya fazla ödeme yapılmış! Ödenecek: {kalan_tutar_odeme_sonrasi:.0f} ₺", parent=self.adisyon_frame)
-                 return
-
-            # Kullanıcıdan alınacak ödeme miktarı soruluyor
-            odeme = simpledialog.askfloat(
-                "Ara Ödeme Al",
-                f"Masa {masa_no} ({musteri_adi}) - Toplam Borç: {total_owed:.0f} ₺\n"
-                f"Yapılan Ara Ödemeler: {ara_odemeler_toplam:.0f} ₺\n"
-                f"Şu Anda Ödenecek: {max(0.0, kalan_tutar_odeme_sonrasi):.0f} ₺\n\n"
-                "Alınan Ödeme Miktarı (₺):",
-                minvalue=0.01,
-                initialvalue=max(0.0, kalan_tutar_odeme_sonrasi), # Başlangıç değeri ödenecek tutar olsun
-                parent=self.root
-            )
-
-            if odeme is None or odeme <= 0:
-                 if odeme is not None:
-                     messagebox.showwarning("Uyarı", "Geçersiz veya sıfır ödeme miktarı girildi.", parent=self.adisyon_frame)
-                 return
-
-            # Eğer girilen ödeme ödenecek tutardan fazlaysa onayla
-            if odeme > kalan_tutar_odeme_sonrasi:
-                if not messagebox.askyesno("Fazla Ödeme?", f"Girilen ödeme ({odeme:.0f} ₺) ödenecek tutardan ({max(0.0, kalan_tutar_odeme_sonrasi):.0f} ₺) fazla. Devam edilsin mi?", parent=self.adisyon_frame):
-                    return
-
-            try:
-                # Ara ödemeyi ara_odemeler tablosuna kaydet
-                self.cursor.execute('''
-                    INSERT INTO ara_odemeler (masa_no, miktar, tarih)
-                    VALUES (?, ?, ?)
-                ''', (masa_no, odeme, self._tarih_saat_al_db_format()))
-
-                # MÜŞTERİ KÜMÜLATİF BAKİYESİNİ GÜNCELLE
-                # Ara ödeme müşterinin kümülatif bakiyesinden düşülür.
-                yeni_cumulative_balance = current_cumulative_balance - odeme
-
-                self.cursor.execute('''
-                    UPDATE musteriler
-                    SET cumulative_balance = ?
-                    WHERE musteri_id = ?
-                ''', (yeni_cumulative_balance, musteri_id))
-
-
-                # Masanın son işlem zamanını güncelle
-                self.cursor.execute('''
-                     UPDATE masalar
-                     SET son_islem_zamani = ?
-                     WHERE masa_no = ?
-                ''', (self._tarih_saat_al_db_format(), masa_no))
-
-                self.conn.commit()
-
-                # UI'ı güncelle (Adisyon sekmesindeki bakiye ve toplam borç, masa butonundaki bakiye ve borç)
-                self._sepeti_yukle() # Adisyon sekmesindeki etiketleri günceller
-                self._masa_butonlarini_olustur() # Masa butonlarını günceller
-
-
-                messagebox.showinfo(
-                    "Başarılı",
-                    f"{odeme:.0f} ₺ ara ödeme alındı.\n"
-                    f"Masa {masa_no} ({musteri_adi}).\n"
-                    f"Yeni Kümülatif Bakiye: {yeni_cumulative_balance:.0f} ₺" # Yeni bakiyeyi göster
-                    , parent=self.adisyon_frame
+        
+        # Varsayılan masalar
+        if not self.get_one("SELECT id FROM tables"):
+            for i in range(1, 21):
+                self.execute(
+                    "INSERT INTO tables (name) VALUES (?)",
+                    (f"Masa {i}",),
+                    commit=True
                 )
-
-
-            except sqlite3.Error as e:
-                 messagebox.showerror("Veritabanı Hatası", f"Ara ödeme kaydedilirken hata oluştu: {e}", parent=self.adisyon_frame)
-                 self.conn.rollback()
-            except Exception as e:
-                 messagebox.showerror("Hata", f"Ara ödeme alınırken beklenmedik hata: {e}", parent=self.adisyon_frame)
-                 print(f"Ara ödeme hatası: {e}")
-                 import traceback
-                 traceback.print_exc()
-
-        except Exception as e:
-             messagebox.showerror("Hata", f"Ara ödeme işlemi sırasında beklenmedik hata: {e}", parent=self.adisyon_frame)
-             print(f"Ara ödeme ana blok hatası: {e}")
-             import traceback
-             traceback.print_exc()
-
-
-    def _odeme_yap(self, odeme_turu):
-        """Aktif masanın hesabını kapatır, siparişleri geçmişe kaydeder, masayı boşaltır ve müşteri bakiyesini günceller"""
-        if not self.aktif_masa:
-            messagebox.showwarning("Uyarı", "Önce bir masa seçmelisiniz!", parent=self.adisyon_frame)
-            return
-
-        masa_no = self.aktif_masa
-
-        self.cursor.execute("SELECT durum, musteri_id, toplam FROM masalar WHERE masa_no = ?", (masa_no,))
-        masa_info = self.cursor.fetchone()
-        if not masa_info:
-             messagebox.showwarning("Uyarı", "Masa bilgisi veritabanında bulunamadı.", parent=self.adisyon_frame)
-             self._sepeti_yukle()
-             self._masa_butonlarini_olustur()
-             return
-
-        masa_durum = masa_info['durum']
-        musteri_id = masa_info['musteri_id']
-        masa_oturum_toplami = masa_info['toplam'] if masa_info['toplam'] is not None else 0.0
-
-
-        if masa_durum != 'dolu':
-             messagebox.showwarning("Uyarı", "Bu masa dolu değil veya zaten kapatılmış.", parent=self.adisyon_frame)
-             self._sepeti_yukle()
-             self._masa_butonlarini_olustur()
-             return
-
-        self.cursor.execute("SELECT COUNT(*) FROM masa_siparisleri WHERE masa_no = ?", (masa_no,))
-        siparis_sayisi = self.cursor.fetchone()[0]
-
-        if siparis_sayisi == 0:
-            # Sepet boşsa masayı direkt boşalt
-            if messagebox.askyesno("Uyarı", f"Sepet boş. Masa {masa_no}'yu kapatıp boşaltmak istediğinize emin misiniz?", parent=self.adisyon_frame):
-                 self._sepeti_temizle() # _sepeti_temizle çağrılır, o içinde DB güncelleme ve UI yenileme yapar
-                 messagebox.showinfo("Bilgi", f"Masa {masa_no} boşaltıldı.", parent=self.adisyon_frame)
-                 # Ödeme işlemi tamamlandığı için aktif masayı burada None yapmalıyız.
-                 self.aktif_masa = None
-                 if hasattr(self, 'aktif_masa_label'):
-                     self.aktif_masa_label.config(text="Aktif Masa: Seçili değil")
-                 if hasattr(self, 'musteri_label'):
-                      self.musteri_label.config(text="Müşteri: -")
-                 if hasattr(self, 'musteri_bakiye_adisyon_label'):
-                      self.musteri_bakiye_adisyon_label.config(text="Bakiye: 0 ₺") # Bakiye etiketini de sıfırla
-                 return # İşlem tamamlandı
-
-            return # Sepet boş ve kullanıcı kapatmak istemediyse çık
-
-
-        # Siparişler varsa ödeme işlemine devam et
-
-        # Müşterinin mevcut kümülatif bakiyesini çek (varsa)
-        current_cumulative_balance = 0.0
-        if musteri_id:
-            self.cursor.execute("SELECT cumulative_balance FROM musteriler WHERE musteri_id = ?", (musteri_id,))
-            musteri_bakiye_row = self.cursor.fetchone()
-            if musteri_bakiye_row:
-                current_cumulative_balance = musteri_bakiye_row['cumulative_balance'] if musteri_bakiye_row['cumulative_balance'] is not None else 0.0
-
-        # Masanın ara ödemeler toplamını al
-        self.cursor.execute('''
-            SELECT COALESCE(SUM(miktar), 0) as ara_odeme_toplam FROM ara_odemeler
-            WHERE masa_no = ?
-        ''', (masa_no,))
-        ara_odeme_row = self.cursor.fetchone()
-
-        # Anahtar adı 'ara_odeme_toplam' olarak kullanılmalı
-        ara_odemeler_toplam = ara_odeme_row['ara_odeme_toplam'] if ara_odeme_row and 'ara_odeme_toplam' in ara_odeme_row and ara_odeme_row['ara_odeme_toplam'] is not None else 0.0
-
-
-        # Masa oturumu toplamı + Müşteri kümülatif bakiye = Toplam Borç
-        total_owed = current_cumulative_balance + masa_oturum_toplami
-
-        # Ödenecek Tutar (Bu oturum için alınan ödeme + varsa ara ödemeler düşüldükten sonra kalan)
-        odenecek_tutar_bu_kapanista = total_owed - ara_odemeler_toplam
-
-
-        if odenecek_tutar_bu_kapanista < 0:
-             messagebox.showwarning("Uyarı", f"Masa {masa_no} için fazla ödeme yapılmış veya hesapta tutarsızlık var. Ödenecek: {odenecek_tutar_bu_kapanista:.0f} ₺", parent=self.adisyon_frame)
-             if not messagebox.askyesno("Onay", "Yine de masayı kapatmak istediğinize emin misiniz?", parent=self.adisyon_frame):
-                 return
-
-        # Ödeme onayı al
-        if not messagebox.askyesno("Ödeme Onayı",
-                                   f"Masa {masa_no} ({odeme_turu})\n"
-                                   f"Masa Oturumu Toplamı: {masa_oturum_toplami:.0f} ₺\n"
-                                   f"Müşteri Kümülatif Bakiye: {current_cumulative_balance:.0f} ₺\n"
-                                   f"Toplam Borç: {total_owed:.0f} ₺\n"
-                                   f"Yapılan Ara Ödemeler: {ara_odemeler_toplam:.0f} ₺\n"
-                                   f"Ödenecek Tutar: {max(0.0, odenecek_tutar_bu_kapanista):.0f} ₺\n\n"
-                                   "Masayı kapatmak istediğinize emin misiniz?",
-                                   parent=self.adisyon_frame):
-            return
-
+        
+        # Varsayılan kategoriler
+        if not self.get_one("SELECT id FROM categories"):
+            default_categories = [
+                ("Sıcak İçecekler", "Çay, kahve, sıcak çikolata vb.", 1),
+                ("Soğuk İçecekler", "Meyve suları, soda, limonata vb.", 2),
+                ("Yiyecekler", "Ana yemekler, atıştırmalıklar", 3),
+                ("Tatlılar", "Pasta, dondurma, waffle vb.", 4)
+            ]
+            
+            for cat in default_categories:
+                self.execute(
+                    "INSERT INTO categories (name, description, sort_order) VALUES (?, ?, ?)",
+                    cat,
+                    commit=True
+                )
+    
+    def execute(self, query, params=(), commit=False):
         try:
-            kapanis_str = self._tarih_saat_al_db_format()
-
-            # Sipariş geçmişine kaydet (oturuma ait toplamı kaydet)
-            self.cursor.execute('''
-                INSERT INTO siparis_gecmisi
-                (masa_no, tarih, odeme_turu, toplam, musteri_id)
-                VALUES (?, ?, ?, ?, ?)
-            ''', (masa_no, kapanis_str, odeme_turu, masa_oturum_toplami, musteri_id))
-
-            siparis_id = self.cursor.lastrowid
-
-            # Sipariş detaylarını kaydet (masa_siparisleri'nden çekerek)
-            self.cursor.execute('''
-                SELECT urun_adi, fiyat, miktar, tutar
-                FROM masa_siparisleri
-                WHERE masa_no = ?
-            ''', (masa_no,))
-            siparis_detaylari = self.cursor.fetchall()
-
-            for detay in siparis_detaylari:
-                self.cursor.execute('''
-                    INSERT INTO siparis_detaylari
-                    (siparis_id, urun_adi, fiyat, miktar, tutar)
-                    VALUES (?, ?, ?, ?, ?)
-                ''', (siparis_id, detay['urun_adi'], detay['fiyat'], detay['miktar'], detay['tutar']))
-
-            # Masa geçmişine kaydet (oturuma ait bilgileri kaydet)
-            self.cursor.execute("SELECT acilis FROM masalar WHERE masa_no = ?", (masa_no,))
-            acilis_str = self.cursor.fetchone()['acilis'] # Acilis zamanını çek
-            acilis_kayit = acilis_str if acilis_str else datetime(2000, 1, 1, 0, 0, 0).strftime(DB_DATE_FORMAT)
-
-            self.cursor.execute('''
-                INSERT INTO masa_gecmisi
-                (masa_no, acilis, kapanis, musteri_id, toplam, odeme_turu, tarih)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            ''', (masa_no, acilis_kayit, kapanis_str, musteri_id, masa_oturum_toplami, odeme_turu, kapanis_str))
-
-
-            # MÜŞTERİ KÜMÜLATİF BAKİYESİNİ GÜNCELLE
-            if musteri_id:
-                alinan_odeme_bu_kapanista = max(0.0, odenecek_tutar_bu_kapanista)
-                yeni_cumulative_balance = current_cumulative_balance + masa_oturum_toplami - alinan_odeme_bu_kapanista
-
-                self.cursor.execute('''
-                    UPDATE musteriler
-                    SET cumulative_balance = ?
-                    WHERE musteri_id = ?
-                ''', (yeni_cumulative_balance, musteri_id))
-
-
-            # Masa siparişlerini ve ara ödemeleri temizle
-            self.cursor.execute("DELETE FROM masa_siparisleri WHERE masa_no = ?", (masa_no,))
-            self.cursor.execute("DELETE FROM ara_odemeler WHERE masa_no = ?", (masa_no,))
-
-            # Masayı boşalt ve durumunu güncelle
-            self.cursor.execute('''
-                UPDATE masalar
-                SET durum = 'boş', toplam = 0, musteri_id = NULL,
-                acilis = NULL, kapanis = ?,
-                son_adisyon_zamani = NULL, son_islem_zamani = ?
-                WHERE masa_no = ?
-            ''', (kapanis_str, kapanis_str, masa_no))
-
-            self.conn.commit()
-
-            # Fatura/Fiş Bilgisi Oluştur (Basit metin)
-            fatura = f" ADİSYON DETAY & FİŞ \n"
-            fatura += f"Masa: {masa_no}\n"
-            # Acilis zamanını masa_gecmisi'nden çekmek daha doğru olabilir
-            self.cursor.execute("SELECT acilis FROM masa_gecmisi WHERE masa_no = ? ORDER BY kapanis DESC LIMIT 1", (masa_no,))
-            acilis_gecmis_row = self.cursor.fetchone()
-            acilis_str_display = datetime.strptime(acilis_gecmis_row['acilis'], DB_DATE_FORMAT).strftime(RAPOR_TARIH_FORMATI + " %H:%M") if acilis_gecmis_row and acilis_gecmis_row['acilis'] else '-'
-
-            fatura += f"Açılış: {acilis_str_display}\n"
-            fatura += f"Kapanış: {self._tarih_saat_al_display_format()}\n"
-            fatura += f"Ödeme Türü: {odeme_turu}\n"
-
-            if musteri_id:
-                self.cursor.execute("SELECT ad, soyad FROM musteriler WHERE musteri_id = ?", (musteri_id,))
-                musteri = self.cursor.fetchone()
-                if musteri and (musteri['ad'] or musteri['soyad']):
-                    fatura += f"Müşteri: {musteri['ad']} {musteri['soyad']}".strip() + "\n"
-                    # Fişte güncel kümülatif bakiyeyi de gösterebiliriz
-                    fatura += f"Yeni Bakiye: {yeni_cumulative_balance:.0f} ₺\n"
-
-
-            fatura += "-"*30 + "\n"
-
-            # Sipariş detaylarını fişe ekle (siparis_detaylari tablosundan çekerek)
-            self.cursor.execute('''
-                SELECT urun_adi, fiyat, miktar, tutar
-                FROM siparis_detaylari
-                WHERE siparis_id = ?
-            ''', (siparis_id,)) # Yeni kaydedilen siparis_id kullanıldı
-            siparis_detaylari_fis = self.cursor.fetchall()
-
-            for detay in siparis_detaylari_fis:
-                fatura += f"{detay['urun_adi']} x{detay['miktar']}: {detay['tutar']:.0f} ₺\n"
-
-            fatura += "-"*30 + "\n"
-            fatura += f"Masa Oturumu Toplamı: {masa_oturum_toplami:.0f} ₺\n"
-            if ara_odemeler_toplam > 0:
-                fatura += f"Ara Ödemeler: {ara_odemeler_toplam:.0f} ₺\n"
-            fatura += f"Ödenen Tutar: {max(0.0, odenecek_tutar_bu_kapanista):.0f} ₺\n" # Bu kapanışta ödenen tutar
-            fatura += "=== Teşekkür Ederiz ==="
-
-            # Fiş penceresi
-            popup = tk.Toplevel(self.root)
-            popup.title("Fiş / Adisyon Detay")
-            popup.transient(self.root)
-            popup.grab_set()
-
-            text_frame = ttk.Frame(popup)
-            text_frame.pack(padx=PAD_X, pady=PAD_Y, fill=tk.BOTH, expand=True)
-
-            fatura_text_widget = tk.Text(text_frame, wrap=tk.WORD, font=("Courier New", 10))
-            scrollbar = ttk.Scrollbar(text_frame, command=fatura_text_widget.yview)
-            fatura_text_widget.config(yscrollcommand=scrollbar.set)
-            scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-            fatura_text_widget.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-
-            fatura_text_widget.insert(tk.END, fatura)
-            fatura_text_widget.config(state="disabled")
-
-            ttk.Button(popup, text="Tamam", command=popup.destroy, style="TButton").pack(pady=PAD_Y)
-            popup.bind("<Return>", lambda e: popup.destroy())
-
-            # Ödeme işlemi tamamlandığı için aktif masayı sıfırla
-            self.aktif_masa = None
-            if hasattr(self, 'aktif_masa_label'):
-                 self.aktif_masa_label.config(text="Aktif Masa: Seçili değil")
-            if hasattr(self, 'musteri_label'):
-                 self.musteri_label.config(text="Müşteri: -")
-            if hasattr(self, 'musteri_bakiye_adisyon_label'): # Bakiye etiketini de sıfırla
-                 self.musteri_bakiye_adisyon_label.config(text="Bakiye: 0 ₺")
-
-            self._sepeti_temizle_ui_only()
-
-            self._masa_butonlarini_olustur()
-
-            messagebox.showinfo("Başarılı", f"Masa {masa_no} kapatıldı ({odeme_turu}).", parent=self.adisyon_frame)
-
-        except sqlite3.Error as e:
-            messagebox.showerror("Veritabanı Hatası", f"Ödeme yapılırken hata oluştu (Masa {masa_no}): {e}", parent=self.adisyon_frame)
-            self.conn.rollback()
-        except Exception as e:
-            messagebox.showerror("Hata", f"Ödeme yapılırken beklenmedik hata oluştu (Masa {masa_no}): {e}", parent=self.adisyon_frame)
-            print(f"Ödeme yapma hatası (Masa {masa_no}): {e}")
-            import traceback
-            traceback.print_exc()
-
-
-    def indirimi_uygula_action(self):
-        """Adisyon toplamına indirim uygular."""
-        if not self.aktif_masa:
-            messagebox.showwarning("Uyarı", "Önce bir masa seçmelisiniz!", parent=self.adisyon_frame)
-            return
-
-        masa_no = self.aktif_masa
-
-        try:
-            indirim_orani = simpledialog.askfloat("İndirim Uygula", "Uygulanacak indirim oranını girin (%):",
-                                                 minvalue=0.0, maxvalue=100.0, parent=self.root)
-
-            if indirim_orani is None: # Kullanıcı iptal etti
-                return
-
-            if indirim_orani < 0 or indirim_orani > 100:
-                 messagebox.showwarning("Uyarı", "Geçerli bir indirim oranı girin (0-100 arası).", parent=self.adisyon_frame)
-                 return
-
-            # Masanın mevcut toplamını al
-            self.cursor.execute("SELECT toplam FROM masalar WHERE masa_no = ?", (masa_no,))
-            masa_toplam_row = self.cursor.fetchone()
-            if not masa_toplam_row:
-                 messagebox.showwarning("Uyarı", f"Masa {masa_no} bilgisi bulunamadı.", parent=self.adisyon_frame)
-                 return
-
-            mevcut_toplam = masa_toplam_row['toplam'] if masa_toplam_row['toplam'] is not None else 0.0
-
-            # İndirimli toplamı hesapla
-            indirim_miktari = mevcut_toplam * (indirim_orani / 100.0)
-            indirimli_toplam = mevcut_toplam - indirim_miktari
-
-            # Masanın toplamını veritabanında güncelle
-            self.cursor.execute("UPDATE masalar SET toplam = ? WHERE masa_no = ?", (indirimli_toplam, masa_no))
-            self.conn.commit()
-
-            # UI'ı güncelle
-            self._sepeti_yukle() # Adisyon listesini ve toplam etiketini günceller
-            self._masa_butonlarini_olustur() # Masa butonundaki toplamı güncelle
-
-            messagebox.showinfo("Başarılı", f"Masa {masa_no} hesabına %{indirim_orani:.0f} indirim uygulandı.\nYeni Toplam: {indirimli_toplam:.0f} ₺", parent=self.adisyon_frame)
-
-
-        except ValueError:
-            messagebox.showwarning("Uyarı", "Geçerli bir sayısal değer girin.", parent=self.adisyon_frame)
-        except sqlite3.Error as e:
-            messagebox.showerror("Veritabanı Hatası", f"İndirim uygulanırken hata oluştu: {e}", parent=self.adisyon_frame)
-            self.conn.rollback()
-        except Exception as e:
-            messagebox.showerror("Hata", f"İndirim uygulanırken beklenmedik hata: {e}", parent=self.adisyon_frame)
-            print(f"İndirim uygulama hatası: {e}")
-
-
-    # --- Ürün Yönetimi Sekmesi Fonksiyonları ---
-
-    def urun_arayuz_olustur(self):
-        """Ürün Yönetimi sekmesi arayüzünü oluşturur."""
-        # Sol Panel (Ürün Listesi)
-        urun_liste_frame = ttk.Frame(self.urun_frame)
-        urun_liste_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, PAD_X))
-
-        ttk.Label(urun_liste_frame, text="Ürün Listesi", font=('Arial', 12, 'bold')).pack(pady=PAD_Y)
-
-        # Treeview ve Scrollbar
-        treeview_scrollbar_frame = ttk.Frame(urun_liste_frame)
-        treeview_scrollbar_frame.pack(fill=tk.BOTH, expand=True)
-
-        self.urun_tree = ttk.Treeview(treeview_scrollbar_frame, columns=("Sıra", "Adı", "Fiyatı", "Kategori"), show="headings")
-        self.urun_tree.heading("Sıra", text="Sıra")
-        self.urun_tree.heading("Adı", text="Ürün Adı")
-        self.urun_tree.heading("Fiyatı", text="Fiyatı (₺)")
-        self.urun_tree.heading("Kategori", text="Kategori")
-
-        self.urun_tree.column("Sıra", width=50, anchor='center')
-        self.urun_tree.column("Adı", width=150)
-        self.urun_tree.column("Fiyatı", width=80, anchor='e')
-        self.urun_tree.column("Kategori", width=100)
-
-        self.urun_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-
-        urun_tree_scrollbar = ttk.Scrollbar(treeview_scrollbar_frame, orient=tk.VERTICAL, command=self.urun_tree.yview)
-        urun_tree_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        self.urun_tree.configure(yscrollcommand=urun_tree_scrollbar.set)
-
-        self.urun_tree.bind("<<TreeviewSelect>>", self._urun_sec) # Ürün seçildiğinde _urun_sec çağrılır
-
-
-        # Sağ Panel (Ürün Bilgileri ve Ekle/Güncelle/Sil Formu)
-        urun_form_frame = ttk.Frame(self.urun_frame)
-        urun_form_frame.pack(side=tk.RIGHT, fill=tk.Y)
-
-        ttk.Label(urun_form_frame, text="Ürün Bilgileri", font=('Arial', 12, 'bold')).pack(pady=PAD_Y)
-
-        ttk.Label(urun_form_frame, text="Sıra:").pack(anchor=tk.W)
-        self.urun_sira_entry = ttk.Entry(urun_form_frame, width=30)
-        self.urun_sira_entry.pack(pady=(0, PAD_Y), fill=tk.X)
-
-        ttk.Label(urun_form_frame, text="Ürün Adı:").pack(anchor=tk.W)
-        self.urun_adi_entry = ttk.Entry(urun_form_frame, width=30)
-        self.urun_adi_entry.pack(pady=(0, PAD_Y), fill=tk.X)
-
-        ttk.Label(urun_form_frame, text="Fiyatı (₺):").pack(anchor=tk.W)
-        self.urun_fiyat_entry = ttk.Entry(urun_form_frame, width=30)
-        self.urun_fiyat_entry.pack(pady=(0, PAD_Y), fill=tk.X)
-
-        ttk.Label(urun_form_frame, text="Kategori:").pack(anchor=tk.W)
-        self.urun_kategori_entry = ttk.Entry(urun_form_frame, width=30)
-        self.urun_kategori_entry.pack(pady=(0, PAD_Y), fill=tk.X)
-
-        # Aktif Checkbutton
-        self.urun_aktif_var = tk.IntVar(value=1)
-        ttk.Checkbutton(urun_form_frame, text="Aktif", variable=self.urun_aktif_var).pack(anchor=tk.W, pady=(0, PAD_Y))
-
-
-        # Butonlar Frame (Yan yana butonlar için)
-        button_frame = ttk.Frame(urun_form_frame)
-        button_frame.pack(pady=PAD_Y, fill=tk.X)
-
-        # Ürün Yönetimi Butonları
-        ttk.Button(button_frame, text="Yeni Ürün Ekle", style="Yonetim.TButton", command=self._urun_ekle).pack(side=tk.LEFT, padx=(0, PAD_X), fill=tk.X, expand=True)
-        ttk.Button(button_frame, text="Ürünü Güncelle", style="Yonetim.TButton", command=self._urun_guncelle).pack(side=tk.LEFT, padx=(0, PAD_X), fill=tk.X, expand=True)
-        ttk.Button(button_frame, text="Ürünü Sil", style="Temizle.TButton", command=self._urun_sil).pack(side=tk.LEFT, fill=tk.X, expand=True)
-
-        # Kategori Yönetimi Butonları (Ayrı satırda)
-        kategori_button_frame = ttk.Frame(urun_form_frame)
-        kategori_button_frame.pack(pady=(0, PAD_Y), fill=tk.X)
-        ttk.Button(kategori_button_frame, text="Kategori Ekle", style="Yonetim.TButton", command=self._kategori_ekle).pack(side=tk.LEFT, padx=(0, PAD_X), fill=tk.X, expand=True)
-        ttk.Button(kategori_button_frame, text="Kategori Sil", style="Temizle.TButton", command=self._kategori_sil).pack(side=tk.LEFT, fill=tk.X, expand=True)
-
-
-        self._urunleri_yukle() # Ürünleri Treeview'e yükle
-
-    def _urunleri_yukle(self):
-        """Ürünler tablosundaki tüm ürünleri Ürün Yönetimi sekmesindeki Treeview'a yükler."""
-        # Treeview'ı temizle
-        for item in self.urun_tree.get_children():
-            self.urun_tree.delete(item)
-
-        try:
-            # Ürünleri sıraya göre çek
-            self.cursor.execute("SELECT id, sira, urun_adi, fiyat, kategori, aktif FROM urunler ORDER BY sira ASC, urun_adi ASC")
-            urunler = self.cursor.fetchall()
-
-            for urun in urunler:
-                # Aktif bilgisini string'e çevir ("Aktif" veya "Pasif")
-                aktif_status = "Aktif" if urun['aktif'] == 1 else "Pasif"
-                self.urun_tree.insert("", tk.END, iid=urun['id'], values=(
-                    urun['sira'],
-                    urun['urun_adi'],
-                    f"{urun['fiyat']:.0f} ₺", # Fiyatı formatla
-                    urun['kategori'],
-                    aktif_status # Aktif statusunu ekle
-                ))
-
-        except sqlite3.Error as e:
-            print(f"Ürünleri yükleme hatası: {e}")
-            messagebox.showerror("Veritabanı Hatası", f"Ürünler yüklenirken hata oluştu: {e}")
-        except Exception as e:
-            print(f"Beklenmedik hata oluştu (_urunleri_yukle): {e}")
-
-
-    def _urun_sec(self, event):
-        """Ürün listesinden bir ürün seçildiğinde form alanlarını doldurur."""
-        selected_item = self.urun_tree.selection()
-        if not selected_item:
-            self._urun_formunu_temizle() # Seçim kalkarsa formu temizle
-            return
-
-        # Seçilen öğenin değerlerini al
-        # item_values, Treeview'a insert edilen values tuple'ıdır.
-        # Sütunlar: "Sıra", "Adı", "Fiyatı", "Kategori", "Aktif"
-        # Indexler:    0      1         2         3         4
-        item_values = self.urun_tree.item(selected_item, 'values')
-        # Öğenin ID'sini al (veritabanındaki urun_id'ye karşılık gelir)
-        self.secili_urun_id = self.urun_tree.item(selected_item, 'iid')
-
-
-        # item_values tuple'ının boyutunu kontrol et
-        # Beklenen 5 sütun var: Sıra, Adı, Fiyatı, Kategori, Aktif
-        if len(item_values) < 5:
-            print(f"Hata: Seçilen ürün öğesi beklenenden az değer içeriyor: {item_values}")
-            messagebox.showwarning("Hata", "Seçilen ürün bilgisi eksik.", parent=self.urun_frame)
-            self._urun_formunu_temizle()
-            self.secili_urun_id = None
-            return
-
-        try:
-            # Değerleri ilgili giriş alanlarına yerleştir
-            # İndexler: Sıra=0, Adı=1, Fiyatı=2, Kategori=3, Aktif=4
-            sira = item_values[0] if item_values[0] is not None else ""
-            urun_adi = item_values[1] if item_values[1] is not None else ""
-            fiyat = item_values[2].replace(' ₺', '').strip() if item_values[2] is not None else "" # Fiyatı alırken ' ₺' karakterini temizle
-            kategori = item_values[3] if item_values[3] is not None else ""
-            aktif_str = item_values[4] if item_values[4] is not None else "Pasif" # "Aktif" veya "Pasif"
-
-            self.urun_sira_entry.delete(0, tk.END)
-            self.urun_sira_entry.insert(0, sira)
-
-            self.urun_adi_entry.delete(0, tk.END)
-            self.urun_adi_entry.insert(0, urun_adi)
-
-            self.urun_fiyat_entry.delete(0, tk.END)
-            self.urun_fiyat_entry.insert(0, fiyat)
-
-            self.urun_kategori_entry.delete(0, tk.END)
-            self.urun_kategori_entry.insert(0, kategori)
-
-            # Aktif checkbox'ı ayarla
-            if aktif_str == "Aktif":
-                self.urun_aktif_var.set(1)
-            else:
-                self.urun_aktif_var.set(0)
-
-        except IndexError:
-             print(f"Hata: Treeview öğesi değerlerine erişirken index hatası: {item_values}")
-             messagebox.showerror("Hata", "Ürün bilgileri yüklenirken beklenmedik hata (IndexError).", parent=self.urun_frame)
-             self._urun_formunu_temizle()
-             self.secili_urun_id = None
-        except ValueError:
-             print(f"Hata: Fiyat değeri sayıya dönüştürülemedi: {item_values[2]}")
-             messagebox.showerror("Hata", "Ürün fiyatı geçersiz formatta.", parent=self.urun_frame)
-             self._urun_formunu_temizle()
-             self.secili_urun_id = None
-        except Exception as e:
-             print(f"Beklenmedik hata oluştu (_urun_sec): {e}")
-             messagebox.showerror("Hata", f"Ürün bilgileri yüklenirken beklenmedik hata: {e}", parent=self.urun_frame)
-             self._urun_formunu_temizle()
-             self.secili_urun_id = None
-
-
-    def _urun_formunu_temizle(self):
-        """Ürün yönetim form alanlarını temizler."""
-        self.urun_sira_entry.delete(0, tk.END)
-        self.urun_adi_entry.delete(0, tk.END)
-        self.urun_fiyat_entry.delete(0, tk.END)
-        self.urun_kategori_entry.delete(0, tk.END)
-        self.urun_aktif_var.set(1) # Varsayılan olarak Aktif seçili gelsin
-        self.secili_urun_id = None # Seçili ürün ID'sini sıfırla
-
-
-    def _urun_ekle(self):
-        """Yeni ürün ekler."""
-        sira_str = self.urun_sira_entry.get().strip()
-        urun_adi = self.urun_adi_entry.get().strip()
-        fiyat_str = self.urun_fiyat_entry.get().strip()
-        kategori = self.urun_kategori_entry.get().strip()
-        aktif = self.urun_aktif_var.get() # 1 veya 0
-
-        if not urun_adi or not fiyat_str:
-            messagebox.showwarning("Uyarı", "Ürün Adı ve Fiyatı boş bırakılamaz.", parent=self.urun_frame)
-            return
-
-        try:
-            sira = int(sira_str) if sira_str else None # Sıra boş bırakılabilir
-            fiyat = float(fiyat_str)
-            if fiyat < 0:
-                 messagebox.showwarning("Uyarı", "Fiyat negatif olamaz.", parent=self.urun_frame)
-                 return
-
-        except ValueError:
-            messagebox.showwarning("Uyarı", "Sıra ve Fiyat için geçerli sayısal değerler girin.", parent=self.urun_frame)
-            return
-
-        try:
-            self.cursor.execute('''
-                INSERT INTO urunler (sira, urun_adi, fiyat, kategori, aktif)
-                VALUES (?, ?, ?, ?, ?)
-            ''', (sira, urun_adi, fiyat, kategori, aktif))
-            self.conn.commit()
-            messagebox.showinfo("Başarılı", "Ürün başarıyla eklendi.", parent=self.urun_frame)
-            self._urunleri_yukle() # Listeyi yenile
-            self._urun_formunu_temizle() # Formu temizle
-            self._filter_hizli_satis_buttons() # Hızlı satış butonlarını yenile (yeni kategori/ürün eklenmiş olabilir)
-
-        except sqlite3.IntegrityError:
-            messagebox.showwarning("Uyarı", "Bu ürün adı veya sıra numarası zaten mevcut.", parent=self.urun_frame)
-        except sqlite3.Error as e:
-            messagebox.showerror("Veritabanı Hatası", f"Ürün eklenirken hata oluştu: {e}", parent=self.urun_frame)
-            self.conn.rollback()
-        except Exception as e:
-            messagebox.showerror("Hata", f"Ürün eklenirken beklenmedik hata: {e}", parent=self.urun_frame)
-            print(f"Ürün ekleme hatası: {e}")
-
-
-    def _urun_guncelle(self):
-        """Seçili ürünü günceller."""
-        if self.secili_urun_id is None:
-            messagebox.showwarning("Uyarı", "Lütfen önce listeden güncellenecek bir ürün seçin.", parent=self.urun_frame)
-            return
-
-        sira_str = self.urun_sira_entry.get().strip()
-        urun_adi = self.urun_adi_entry.get().strip()
-        fiyat_str = self.urun_fiyat_entry.get().strip()
-        kategori = self.urun_kategori_entry.get().strip()
-        aktif = self.urun_aktif_var.get() # 1 veya 0
-
-        if not urun_adi or not fiyat_str:
-            messagebox.showwarning("Uyarı", "Ürün Adı ve Fiyatı boş bırakılamaz.", parent=self.urun_frame)
-            return
-
-        try:
-            sira = int(sira_str) if sira_str else None # Sıra boş bırakılabilir
-            fiyat = float(fiyat_str)
-            if fiyat < 0:
-                 messagebox.showwarning("Uyarı", "Fiyat negatif olamaz.", parent=self.urun_frame)
-                 return
-
-        except ValueError:
-            messagebox.showwarning("Uyarı", "Sıra ve Fiyat için geçerli sayısal değerler girin.", parent=self.urun_frame)
-            return
-
-        try:
-            self.cursor.execute('''
-                UPDATE urunler
-                SET sira = ?, urun_adi = ?, fiyat = ?, kategori = ?, aktif = ?
-                WHERE id = ?
-            ''', (sira, urun_adi, fiyat, kategori, aktif, self.secili_urun_id))
-            self.conn.commit()
-            messagebox.showinfo("Başarılı", "Ürün başarıyla güncellendi.", parent=self.urun_frame)
-            self._urunleri_yukle() # Listeyi yenile
-            self._urun_formunu_temizle() # Formu temizle
-            self._filter_hizli_satis_buttons() # Hızlı satış butonlarını yenile (ürün bilgisi değişmiş olabilir)
-
-        except sqlite3.IntegrityError:
-            messagebox.showwarning("Uyarı", "Bu ürün adı veya sıra numarası zaten mevcut.", parent=self.urun_frame)
-        except sqlite3.Error as e:
-            messagebox.showerror("Veritabanı Hatası", f"Ürün güncellenirken hata oluştu: {e}", parent=self.urun_frame)
-            self.conn.rollback()
-        except Exception as e:
-            messagebox.showerror("Hata", f"Ürün güncellenirken beklenmedik hata: {e}", parent=self.urun_frame)
-            print(f"Ürün güncelleme hatası: {e}")
-
-
-    def _urun_sil(self):
-        """Seçili ürünü siler."""
-        if self.secili_urun_id is None:
-            messagebox.showwarning("Uyarı", "Lütfen önce listeden silinecek bir ürün seçin.", parent=self.urun_frame)
-            return
-
-        # Silinecek ürünün adını al
-        try:
-            self.cursor.execute("SELECT urun_adi FROM urunler WHERE id = ?", (self.secili_urun_id,))
-            urun_adi = self.cursor.fetchone()['urun_adi']
-        except Exception as e:
-             print(f"Silinecek ürün adı alınırken hata: {e}")
-             urun_adi = "Seçili Ürün" # Hata durumunda varsayılan metin
-
-        if not messagebox.askyesno("Silme Onayı", f"{urun_adi} ürününü silmek istediğinize emin misiniz?", parent=self.urun_frame):
-            return
-
-        try:
-            self.cursor.execute("DELETE FROM urunler WHERE id = ?", (self.secili_urun_id,))
-            self.conn.commit()
-            messagebox.showinfo("Başarılı", "Ürün başarıyla silindi.", parent=self.urun_frame)
-            self._urunleri_yukle() # Listeyi yenile
-            self._urun_formunu_temizle() # Formu temizle
-            self._filter_hizli_satis_buttons() # Hızlı satış butonlarını yenile (ürün silindi)
-
-        except sqlite3.Error as e:
-            messagebox.showerror("Veritabanı Hatası", f"Ürün silinirken hata oluştu: {e}", parent=self.urun_frame)
-            self.conn.rollback()
-        except Exception as e:
-            messagebox.showerror("Hata", f"Ürün silinirken beklenmedik hata: {e}", parent=self.urun_frame)
-            print(f"Ürün silme hatası: {e}")
-
-
-    def _kategorileri_getir(self):
-        """Veritabanındaki ürün kategorilerini getirir ve 'Tümü' seçeneğini ekler."""
-        try:
-            self.cursor.execute("SELECT DISTINCT kategori FROM urunler WHERE aktif = 1 ORDER BY kategori")
-            kategoriler = [row['kategori'] for row in self.cursor.fetchall() if row['kategori']] # Boş kategorileri atla
-            kategoriler.insert(0, "Tümü") # Başa 'Tümü' seçeneğini ekle
-            return kategoriler
-        except sqlite3.Error as e:
-            print(f"Kategorileri getirme hatası: {e}")
-            return ["Tümü", "Hata!"] # Hata durumunda varsayılan ve hata mesajı
-        except Exception as e:
-            print(f"Beklenmedik hata oluştu (_kategorileri_getir): {e}")
-            return ["Tümü", "Hata!"] # Hata durumunda varsayılan ve hata mesajı
-
-
-    def _kategori_ekle(self):
-        """Yeni kategori eklemek için pencere açar."""
-        yeni_kategori = simpledialog.askstring("Kategori Ekle", "Eklemek istediğiniz kategori adını girin:", parent=self.urun_frame)
-        if yeni_kategori and yeni_kategori.strip():
-            kategori_adi = yeni_kategori.strip()
-            # Kategori ekleme aslında yeni bir ürün eklerken kategori alanına yeni bir değer girmekle olur.
-            # Bu fonksiyon sadece kullanıcıya bilgi verebilir veya ürün ekleme formunu açabilir.
-            # Şu anki yapıda kategori, ürün ekleme formunda giriliyor.
-            messagebox.showinfo("Bilgi", f"'{kategori_adi}' kategorisi, yeni ürün eklerken Kategori alanına yazılarak oluşturulur.", parent=self.urun_frame)
-            # Kategori combobox'ını güncelle
-            kategoriler = self._kategorileri_getir()
-            self.kategori_filtre_combobox['values'] = kategoriler
-
-        elif yeni_kategori is not None: # Kullanıcı boş girdi ama iptal etmedi
-             messagebox.showwarning("Uyarı", "Kategori adı boş bırakılamaz.", parent=self.urun_frame)
-
-
-    def _kategori_sil(self):
-        """Mevcut kategorilerden birini silmek için pencere açar."""
-        kategoriler = self._kategorileri_getir()
-        # 'Tümü' seçeneğini silme listesinden çıkar
-        if "Tümü" in kategoriler:
-             kategoriler.remove("Tümü")
-
-        if not kategoriler:
-             messagebox.showinfo("Bilgi", "Silinecek kategori bulunamadı.", parent=self.urun_frame)
-             return
-
-        # Kullanıcının silmek istediği kategoriyi seçmesini sağla
-        silinecek_kategori = simpledialog.askstring("Kategori Sil", "Silmek istediğiniz kategori adını girin:", parent=self.urun_frame)
-
-        if silinecek_kategori and silinecek_kategori.strip():
-            kategori_adi = silinecek_kategori.strip()
-            if kategori_adi not in kategoriler:
-                 messagebox.showwarning("Uyarı", f"'{kategori_adi}' adında bir kategori bulunamadı.", parent=self.urun_frame)
-                 return
-
-            if not messagebox.askyesno("Silme Onayı", f"'{kategori_adi}' kategorisindeki TÜM ürünler silinecektir.\nDevam etmek istediğinize emin misiniz?", parent=self.urun_frame):
-                 return
-
-            try:
-                # Belirtilen kategorideki ürünleri sil
-                self.cursor.execute("DELETE FROM urunler WHERE kategori = ?", (kategori_adi,))
+            cursor = self.conn.cursor()
+            cursor.execute(query, params)
+            if commit:
                 self.conn.commit()
-                messagebox.showinfo("Başarılı", f"'{kategori_adi}' kategorisindeki tüm ürünler silindi.", parent=self.urun_frame)
-                self._urunleri_yukle() # Ürün listesini yenile
-                self._urun_formunu_temizle() # Formu temizle
-                self._filter_hizli_satis_buttons() # Kategori combobox'ını ve hızlı satış butonlarını yenile
+            return cursor
+        except sqlite3.Error as e:
+            self.show_error("Veritabanı hatası", str(e))
+            return None
+    
+    def get_one(self, query, params=()):
+        cursor = self.execute(query, params)
+        return cursor.fetchone() if cursor else None
+    
+    def get_all(self, query, params=()):
+        cursor = self.execute(query, params)
+        return cursor.fetchall() if cursor else []
+    
+    def show_error(self, title, message):
+        messagebox.showerror(title, f"Veritabanı hatası:\n{message}")
 
-            except sqlite3.Error as e:
-                messagebox.showerror("Veritabanı Hatası", f"Kategori silinirken hata oluştu: {e}", parent=self.urun_frame)
-                self.conn.rollback()
-            except Exception as e:
-                messagebox.showerror("Hata", f"Kategori silinirken beklenmedik hata: {e}", parent=self.urun_frame)
-                print(f"Kategori silme hatası: {e}")
-
-        elif silinecek_kategori is not None: # Kullanıcı boş girdi ama iptal etmedi
-             messagebox.showwarning("Uyarı", "Kategori adı boş bırakılamaz.", parent=self.urun_frame)
-
-
-    def _filter_hizli_satis_buttons(self, category=None): # event parametresi kaldırıldı, gerekirse eklenebilir
-        """Kategori combobox seçimine veya arama çubuğuna göre hızlı satış butonlarını filtreler."""
-        # Önceki butonları temizle
-        if hasattr(self, 'hizli_satis_frame') and isinstance(self.hizli_satis_frame, ttk.Frame):
-             for widget in self.hizli_satis_frame.winfo_children():
-                 widget.destroy()
-        else:
-             print("Uyarı: self.hizli_satis_frame Frame widget'ı tanımlı değil veya doğru tipte değil.")
-             return # İşleme devam etme
-
-        # Ürünleri veritabanından çek
-        sql_query = """
-            SELECT urun_adi, fiyat, kategori
-            FROM urunler
-            WHERE aktif = 1 -- Sadece aktif ürünleri göster
+    def show_help(self):
+        """Kullanım kılavuzunu gösterir"""
+        help_text = """
+        CAFE ADİSYON PROGRAMI KULLANIM KILAVUZU
+            
+        - Adisyon Sekmesi: Sipariş almak için kullanılır
+        - Ürün Yönetimi: Menüye ürün ekleme/düzenleme
+        - Raporlar: Günlük satış raporlarını görüntüleme
+            
+        Daha fazla yardım için: example.com/yardim
         """
-        params = () # Sorgu parametreleri için boş tuple
+        messagebox.showinfo("Yardım", help_text)
 
-        # Kategoriye göre filtreleme (eğer 'Tümü' seçilmediyse)
-        if category is not None and category != "Tümü":
-            sql_query += " AND kategori = ?"
-            params = (category,)
+    def show_about(self):
+        """Program hakkında bilgi gösterir"""
+        about_text = f"""
+        {Config.COMPANY_NAME} Adisyon Programı v4.0
+            
+        Geliştirici: XYZ Yazılım
+        Tel: {Config.PHONE}
+        Versiyon: 1.0.0
+        """
+        messagebox.showinfo("Hakkında", about_text)
 
-        # Arama metnine göre filtreleme (eğer arama metni varsa)
-        arama_metni = self.urun_arama_entry.get().strip().lower()
-        if arama_metni:
-            # Eğer zaten aktif filtresi varsa AND ile ekle, yoksa WHERE ile ekle (aktif=1 zaten var)
-            sql_query += " AND LOWER(urun_adi) LIKE ?"
-            params = params + (f"%{arama_metni}%",) # Parametre tuple'ına arama metnini ekle
-
-
-        # Sıralama koşulunu ekle
-        sql_query += " ORDER BY sira ASC, urun_adi ASC"
-
+# -------------------- ANA UYGULAMA --------------------
+class CafeApp:
+    def __init__(self, root):
+        self.root = root
+        self.setup_window()
+        self.db = Database(Config.DB_NAME)
+        self.current_user = None
+        self.current_order = {
+            'items': [],
+            'table_id': None,
+            'total': 0.0,
+            'discount': 0.0
+        }
+        self.setup_ui()
+        self.show_login()
+    
+    def setup_window(self):
+        self.root.title(f"{Config.COMPANY_NAME} - Adisyon Programı")
+        self.root.geometry("1366x768")
+        self.root.state('zoomed')
+        
+        # Windows DPI ayarı
+        if sys.platform == "win32":
+            from ctypes import windll
+            windll.shcore.SetProcessDpiAwareness(1)
+    
+    def setup_ui(self):
+        # Ana çerçeve
+        self.main_frame = ttk.Frame(self.root)
+        self.main_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Menü çubuğu
+        self.setup_menu()
+        
+        # Sekmeler
+        self.notebook = ttk.Notebook(self.main_frame)
+        
+        # Adisyon sekmesi
+        self.order_tab = ttk.Frame(self.notebook)
+        self.setup_order_tab()
+        
+        # Ürünler sekmesi
+        self.products_tab = ttk.Frame(self.notebook)
+        self.setup_products_tab()
+        
+        # Kategoriler sekmesi
+        self.categories_tab = ttk.Frame(self.notebook)
+        self.setup_categories_tab()
+        
+        # Masalar sekmesi
+        self.tables_tab = ttk.Frame(self.notebook)
+        self.setup_tables_tab()
+        
+        # Raporlar sekmesi
+        self.reports_tab = ttk.Frame(self.notebook)
+        self.setup_reports_tab()
+        
+        # Kullanıcılar sekmesi (sadece admin)
+        self.users_tab = ttk.Frame(self.notebook)
+        self.setup_users_tab()
+        
+        # Sekmeleri ekle
+        self.notebook.add(self.order_tab, text="Adisyon")
+        self.notebook.add(self.products_tab, text="Ürünler")
+        self.notebook.add(self.categories_tab, text="Kategoriler")
+        self.notebook.add(self.tables_tab, text="Masalar")
+        self.notebook.add(self.reports_tab, text="Raporlar")
+        self.notebook.add(self.users_tab, text="Kullanıcılar")
+        
+        # Durum çubuğu
+        self.status_var = tk.StringVar()
+        self.status_bar = ttk.Label(
+            self.main_frame,
+            textvariable=self.status_var,
+            relief=tk.SUNKEN,
+            anchor=tk.W
+        )
+        
+        # Giriş ekranı
+        self.setup_login_screen()
+    
+    def setup_menu(self):
+        menubar = tk.Menu(self.root)
+        
+        # Dosya menüsü
+        file_menu = tk.Menu(menubar, tearoff=0)
+        file_menu.add_command(label="Veritabanı Yedekle", command=self.backup_database)
+        file_menu.add_command(label="Yedekten Geri Yükle", command=self.restore_database)
+        file_menu.add_separator()
+        file_menu.add_command(label="Çıkış", command=self.logout)
+        menubar.add_cascade(label="Dosya", menu=file_menu)
+        
+        # Görünüm menüsü
+        view_menu = tk.Menu(menubar, tearoff=0)
+        view_menu.add_command(label="Klasik Tema", command=lambda: self.set_theme("clam"))
+        view_menu.add_command(label="Modern Tema", command=lambda: self.set_theme("vista"))
+        view_menu.add_command(label="Koyu Tema", command=lambda: self.set_theme("alt"))
+        menubar.add_cascade(label="Görünüm", menu=view_menu)
+        
+        # Yardım menüsü
+        help_menu = tk.Menu(menubar, tearoff=0)
+        help_menu.add_command(label="Kullanım Kılavuzu", command=self.show_help)
+        help_menu.add_command(label="Hakkında", command=self.show_about)
+        menubar.add_cascade(label="Yardım", menu=help_menu)
+        
+        self.root.config(menu=menubar)
+    
+    def backup_database(self):
+        """Veritabanını yedekler"""
         try:
-            # Sorguyu çalıştır
-            self.cursor.execute(sql_query, params)
-            urunler = self.cursor.fetchall()
+            # Yedek klasörü oluştur
+            backup_dir = "backups"
+            if not os.path.exists(backup_dir):
+                os.makedirs(backup_dir)
 
-            # Butonları yerleştirmek için grid ayarları
-            COLS = 6 # Hızlı satış butonları için sütun sayısı (ayarlanabilir)
-            PAD = 4 # Butonlar arası boşluk
+            # Yedek dosya adını oluştur (tarih-saat ile)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup_path = os.path.join(backup_dir, f"cafe_backup_{timestamp}.db")
 
-            # Grid için satır ağırlıklarını ayarla (Responsive olması için)
-            total_rows = (len(urunler) + COLS - 1) // COLS if len(urunler) > 0 else 1 # En az 1 satır yap
-            for r in range(total_rows):
-                 self.hizli_satis_frame.grid_rowconfigure(r, weight=1)
-
-            # Grid için sütun ağırlıklarını ayarla
-            for c in range(COLS):
-                 self.hizli_satis_frame.grid_columnconfigure(c, weight=1)
-
-
-            # Ürün butonlarını oluştur
-            for i, urun in enumerate(urunler):
-                urun_adi = urun['urun_adi']
-                fiyat = urun['fiyat']
-                kategori = urun['kategori']
-
-                # Kategori rengini al, yoksa varsayılan
-                # KATEGORI_RENKLERI sözlüğünde kategori adı yoksa varsayılan renk kullanılır
-                bg_color = KATEGORI_RENKLERI.get(kategori, "#f0f0f0")
-                fg_color = get_text_color(bg_color)
-
-                # Buton oluşturma (Formatlama düzeltildi)
-                btn = tk.Button(
-                    self.hizli_satis_frame,
-                    text=f"{urun_adi}\n{fiyat:.0f} ₺",
-                    command=lambda u=urun_adi: self._urun_ekle_hizli_satis(u),
-                    bg=bg_color,
-                    fg=fg_color,
-                    font=("Arial", 8, "bold"),
-                    relief="raised",
-                    justify="center",
-                    wraplength=80 # Buton metninin sarmalanacağı genişlik (piksel)
-                )
-
-                # Grid'e yerleştirme
-                row, col = divmod(i, COLS)
-                btn.grid(row=row, column=col, padx=PAD, pady=PAD, sticky="nsew")
-
-            # Canvas'ın scroll bölgesini güncelle
-            self.hizli_satis_frame.update_idletasks()
-            if hasattr(self, 'hizli_satis_canvas') and isinstance(self.hizli_satis_canvas, tk.Canvas):
-                 bbox = self.hizli_satis_canvas.bbox("all")
-                 if bbox:
-                     self.hizli_satis_canvas.config(scrollregion=bbox)
-                 else:
-                     # Ürün yoksa scroll bölgesini sıfırla
-                     self.hizli_satis_canvas.config(scrollregion=(0,0,self.hizli_satis_canvas.winfo_width(), self.hizli_satis_canvas.winfo_height()))
-
-
-        except sqlite3.Error as e:
-            print(f"Hızlı satış butonları oluşturma hatası: {e}")
-            messagebox.showerror("Veritabanı Hatası", f"Hızlı satış butonları oluşturulurken hata oluştu: {e}")
+            # Veritabanını kopyala
+            shutil.copy2(self.db.db_file, backup_path)
+            messagebox.showinfo("Başarılı", f"Veritabanı yedeklendi:\n{backup_path}")
         except Exception as e:
-            print(f"Beklenmedik hata oluştu (_hizli_satis_butonlari_olustur): {e}")
+            messagebox.showerror("Hata", f"Yedekleme başarısız:\n{str(e)}")
 
-
-    def _urun_ara(self, event=None):
-        """Ürün arama girişine göre hızlı satış butonlarını filtreler ve kategori filtresini sıfırlar."""
-        # Arama yapıldığında kategori filtresini 'Tümü' yap
-        if hasattr(self, 'kategori_filtre_combobox'):
-             self.kategori_filtre_combobox.set("Tümü")
-
-        # Filterleme işlemini _filter_hizli_satis_buttons fonksiyonuna devret
-        self._filter_hizli_satis_buttons()
-
-
-    # --- Müşteri İşlemleri Sekmesi Fonksiyonları ---
-
-    def musteri_arayuz_olustur(self):
-        """Müşteri İşlemleri sekmesi arayüzünü oluşturur."""
-        # Sol Panel (Müşteri Listesi)
-        musteri_liste_frame = ttk.Frame(self.musteri_frame)
-        musteri_liste_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, PAD_X))
-
-        ttk.Label(musteri_liste_frame, text="Müşteri Listesi", font=('Arial', 12, 'bold')).pack(pady=PAD_Y)
-
-        # Treeview ve Scrollbar
-        treeview_scrollbar_frame = ttk.Frame(musteri_liste_frame)
-        treeview_scrollbar_frame.pack(fill=tk.BOTH, expand=True)
-
-        self.musteri_tree = ttk.Treeview(treeview_scrollbar_frame, columns=("Adı Soyadı", "Telefon", "Adres", "Bakiye"), show="headings")
-        self.musteri_tree.heading("Adı Soyadı", text="Adı Soyadı")
-        self.musteri_tree.heading("Telefon", text="Telefon")
-        self.musteri_tree.heading("Adres", text="Adres")
-        self.musteri_tree.heading("Bakiye", text="Bakiye (₺)")
-
-
-        self.musteri_tree.column("Adı Soyadı", width=150)
-        self.musteri_tree.column("Telefon", width=100)
-        self.musteri_tree.column("Adres", width=200)
-        self.musteri_tree.column("Bakiye", width=80, anchor='e') # Bakiye sağa hizalı
-
-
-        self.musteri_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-
-        musteri_tree_scrollbar = ttk.Scrollbar(treeview_scrollbar_frame, orient=tk.VERTICAL, command=self.musteri_tree.yview)
-        musteri_tree_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        self.musteri_tree.configure(yscrollcommand=musteri_tree_scrollbar.set)
-
-        self.musteri_tree.bind("<<TreeviewSelect>>", self._musteri_sec) # Müşteri seçildiğinde _musteri_sec çağrılır
-
-
-        # Sağ Panel (Müşteri Bilgileri ve Ekle/Güncelle/Sil Formu)
-        musteri_form_frame = ttk.Frame(self.musteri_frame)
-        musteri_form_frame.pack(side=tk.RIGHT, fill=tk.Y)
-
-        ttk.Label(musteri_form_frame, text="Müşteri Bilgileri", font=('Arial', 12, 'bold')).pack(pady=PAD_Y)
-
-        ttk.Label(musteri_form_frame, text="Adı:").pack(anchor=tk.W)
-        self.musteri_ad_entry = ttk.Entry(musteri_form_frame, width=30)
-        self.musteri_ad_entry.pack(pady=(0, PAD_Y), fill=tk.X)
-
-        ttk.Label(musteri_form_frame, text="Soyadı:").pack(anchor=tk.W)
-        self.musteri_soyad_entry = ttk.Entry(musteri_form_frame, width=30)
-        self.musteri_soyad_entry.pack(pady=(0, PAD_Y), fill=tk.X)
-
-        ttk.Label(musteri_form_frame, text="Telefon:").pack(anchor=tk.W)
-        self.musteri_telefon_entry = ttk.Entry(musteri_form_frame, width=30)
-        self.musteri_telefon_entry.pack(pady=(0, PAD_Y), fill=tk.X)
-
-        ttk.Label(musteri_form_frame, text="Adres:").pack(anchor=tk.W)
-        self.musteri_adres_entry = ttk.Entry(musteri_form_frame, width=30)
-        self.musteri_adres_entry.pack(pady=(0, PAD_Y), fill=tk.X)
-
-        ttk.Label(musteri_form_frame, text="Bakiye (₺):").pack(anchor=tk.W)
-        self.musteri_bakiye_entry = ttk.Entry(musteri_form_frame, width=30, state='readonly') # Bakiye manuel değiştirilemesin
-        self.musteri_bakiye_entry.pack(pady=(0, PAD_Y), fill=tk.X)
-        self.musteri_bakiye_entry.insert(0, "0.0") # Varsayılan bakiye 0
-
-
-        # Butonlar Frame (Yan yana butonlar için)
-        button_frame = ttk.Frame(musteri_form_frame)
-        button_frame.pack(pady=PAD_Y, fill=tk.X)
-
-        # Müşteri Yönetimi Butonları
-        ttk.Button(button_frame, text="Yeni Müşteri Ekle", style="Yonetim.TButton", command=self._musteri_ekle).pack(side=tk.LEFT, padx=(0, PAD_X), fill=tk.X, expand=True)
-        ttk.Button(button_frame, text="Müşteriyi Güncelle", style="Yonetim.TButton", command=self._musteri_guncelle).pack(side=tk.LEFT, padx=(0, PAD_X), fill=tk.X, expand=True)
-        ttk.Button(button_frame, text="Müşteriyi Sil", style="Temizle.TButton", command=self._musteri_sil).pack(side=tk.LEFT, fill=tk.X, expand=True)
-
-        # Müşteri Atama Butonu (Ayrı satırda)
-        assign_button_frame = ttk.Frame(musteri_form_frame)
-        assign_button_frame.pack(pady=(0, PAD_Y), fill=tk.X)
-        ttk.Button(assign_button_frame, text="Müşteriyi Masaya Ata", style="Yonetim.TButton", command=self._initiate_assign_customer_mode).pack(fill=tk.X)
-
-
-        self._musteri_listesini_guncelle() # Müşterileri Treeview'e yükle
-
-
-    def _musteri_listesini_guncelle(self):
-        """Müşteriler tablosundaki tüm müşterileri Müşteri İşlemleri sekmesindeki Treeview'a yükler."""
-        # Treeview'ı temizle
-        for item in self.musteri_tree.get_children():
-            self.musteri_tree.delete(item)
-
+    def restore_database(self):
+        """Yedekten veritabanını geri yükler"""
         try:
-            self.cursor.execute("SELECT musteri_id, ad, soyad, telefon, adres, cumulative_balance FROM musteriler ORDER BY ad ASC, soyad ASC")
-            musteriler = self.cursor.fetchall()
-
-            for musteri in musteriler:
-                tam_ad = f"{musteri['ad']} {musteri['soyad']}".strip() # Ad ve soyadı birleştir
-                self.musteri_tree.insert("", tk.END, iid=musteri['musteri_id'], values=(
-                    tam_ad,
-                    musteri['telefon'],
-                    musteri['adres'],
-                    f"{musteri['cumulative_balance']:.0f} ₺" # Bakiye formatlı
-                ))
-
-        except sqlite3.Error as e:
-            print(f"Müşteri listesi yükleme hatası: {e}")
-            messagebox.showerror("Veritabanı Hatası", f"Müşteriler yüklenirken hata oluştu: {e}")
+            # Kullanıcıdan yedek dosyasını seçmesini iste
+            file_path = filedialog.askopenfilename(
+                title="Yedek Dosyası Seç",
+                filetypes=[("Veritabanı dosyaları", "*.db"), ("Tüm dosyalar", "*.*")]
+            )
+            
+            if file_path:
+                # Önce mevcut veritabanını yedekle (güvenlik için)
+                self.backup_database()
+                
+                # Yedek dosyayı ana veritabanına kopyala
+                shutil.copy2(file_path, self.db.db_file)
+                messagebox.showinfo("Başarılı", "Veritabanı geri yüklendi. Programı yeniden başlatın.")
         except Exception as e:
-            print(f"Beklenmedik hata oluştu (_musteri_listesini_guncelle): {e}")
+            messagebox.showerror("Hata", f"Geri yükleme başarısız:\n{str(e)}")
 
-
-    def _musteri_sec(self, event):
-        """Müşteri listesinden bir müşteri seçildiğinde form alanlarını doldurur."""
-        selected_item = self.musteri_tree.selection()
-        if not selected_item:
-            self._musteri_formu_temizle() # Seçim kalkarsa formu temizle
-            return
-
-        # Seçilen öğenin ID'sini al (veritabanındaki musteri_id'ye karşılık gelir)
-        self.secili_musteri_id = self.musteri_tree.item(selected_item, 'iid')
-
+    def setup_login_screen(self):
+        self.login_frame = ttk.Frame(self.main_frame)
+        
+        # Logo
         try:
-            # Müşteri bilgilerini veritabanından çek
-            self.cursor.execute("SELECT ad, soyad, telefon, adres, cumulative_balance FROM musteriler WHERE musteri_id = ?", (self.secili_musteri_id,))
-            musteri = self.cursor.fetchone()
-
-            if musteri:
-                self.musteri_ad_entry.delete(0, tk.END)
-                self.musteri_ad_entry.insert(0, musteri['ad'] if musteri['ad'] is not None else "")
-
-                self.musteri_soyad_entry.delete(0, tk.END)
-                self.musteri_soyad_entry.insert(0, musteri['soyad'] if musteri['soyad'] is not None else "")
-
-                self.musteri_telefon_entry.delete(0, tk.END)
-                self.musteri_telefon_entry.insert(0, musteri['telefon'] if musteri['telefon'] is not None else "")
-
-                self.musteri_adres_entry.delete(0, tk.END)
-                self.musteri_adres_entry.insert(0, musteri['adres'] if musteri['adres'] is not None else "")
-
-                # Bakiye alanını güncelle (readonly olduğu için state'i normal yapıp sonra tekrar readonly yap)
-                self.musteri_bakiye_entry.config(state='normal')
-                self.musteri_bakiye_entry.delete(0, tk.END)
-                bakiye = musteri['cumulative_balance'] if musteri['cumulative_balance'] is not None else 0.0
-                self.musteri_bakiye_entry.insert(0, f"{bakiye:.0f}") # Bakiye formatlı
-                self.musteri_bakiye_entry.config(state='readonly')
-
-
-            else:
-                 # Seçili müşteri veritabanında bulunamazsa formu temizle
-                 self._musteri_formu_temizle()
-                 self.secili_musteri_id = None # ID'yi sıfırla
-                 messagebox.showwarning("Uyarı", "Seçili müşteri bilgisi veritabanında bulunamadı.", parent=self.musteri_frame)
-
-
-        except sqlite3.Error as e:
-            print(f"Müşteri seçme hatası: {e}")
-            messagebox.showerror("Veritabanı Hatası", f"Müşteri bilgileri yüklenirken hata oluştu: {e}")
-            self._musteri_formu_temizle()
-            self.secili_musteri_id = None
-        except Exception as e:
-            print(f"Beklenmedik hata oluştu (_musteri_sec): {e}")
-            messagebox.showerror("Hata", f"Müşteri bilgileri yüklenirken beklenmedik hata: {e}")
-            self._musteri_formu_temizle()
-            self.secili_musteri_id = None
-
-
-    def _musteri_formu_temizle(self):
-        """Müşteri yönetim form alanlarını temizler."""
-        self.musteri_ad_entry.delete(0, tk.END)
-        self.musteri_soyad_entry.delete(0, tk.END)
-        self.musteri_telefon_entry.delete(0, tk.END)
-        self.musteri_adres_entry.delete(0, tk.END)
-        # Bakiye alanını temizle (readonly olduğu için state'i normal yapıp sonra tekrar readonly yap)
-        self.musteri_bakiye_entry.config(state='normal')
-        self.musteri_bakiye_entry.delete(0, tk.END)
-        self.musteri_bakiye_entry.insert(0, "0.0")
-        self.musteri_bakiye_entry.config(state='readonly')
-
-        self.secili_musteri_id = None # Seçili müşteri ID'sini sıfırla
-
-
-    def _musteri_ekle(self):
-        """Yeni müşteri ekler."""
-        ad = self.musteri_ad_entry.get().strip()
-        soyad = self.musteri_soyad_entry.get().strip()
-        telefon = self.musteri_telefon_entry.get().strip()
-        adres = self.musteri_adres_entry.get().strip()
-        # Bakiye manuel girilmiyor, varsayılan 0.0
-
-        if not ad:
-            messagebox.showwarning("Uyarı", "Müşteri Adı boş bırakılamaz.", parent=self.musteri_frame)
+            img = Image.open(Config.LOGO_PATH)
+            img = img.resize((200, 200), Image.LANCZOS)
+            self.logo = ImageTk.PhotoImage(img)
+            logo_label = ttk.Label(self.login_frame, image=self.logo)
+            logo_label.grid(row=0, column=0, columnspan=2, pady=20)
+        except:
+            pass
+        
+        # Kullanıcı adı
+        ttk.Label(self.login_frame, text="Kullanıcı Adı:").grid(row=1, column=0, padx=5, pady=5, sticky="e")
+        self.username_entry = ttk.Entry(self.login_frame)
+        self.username_entry.grid(row=1, column=1, padx=5, pady=5, sticky="w")
+        
+        # Şifre
+        ttk.Label(self.login_frame, text="Şifre:").grid(row=2, column=0, padx=5, pady=5, sticky="e")
+        self.password_entry = ttk.Entry(self.login_frame, show="*")
+        self.password_entry.grid(row=2, column=1, padx=5, pady=5, sticky="w")
+        
+        # Giriş butonu
+        login_btn = ttk.Button(self.login_frame, text="Giriş", command=self.login)
+        login_btn.grid(row=3, column=0, columnspan=2, pady=10)
+        
+        # Enter tuşu ile giriş
+        self.password_entry.bind("<Return>", lambda event: self.login())
+    
+    # -------------------- GİRİŞ/ÇIKIŞ İŞLEMLERİ --------------------
+    def login(self):
+        username = self.username_entry.get().strip()
+        password = self.password_entry.get().strip()
+        
+        if not username or not password:
+            messagebox.showwarning("Uyarı", "Kullanıcı adı ve şifre giriniz")
             return
-
-        if not telefon:
-             messagebox.showwarning("Uyarı", "Telefon numarası boş bırakılamaz.", parent=self.musteri_frame)
-             return
-
-
-        try:
-            self.cursor.execute('''
-                INSERT INTO musteriler (ad, soyad, telefon, adres, kayit_tarihi, cumulative_balance)
-                VALUES (?, ?, ?, ?, ?, ?)
-            ''', (ad, soyad, telefon, adres, self._tarih_saat_al_db_format(), 0.0)) # Yeni müşteri bakiyesi 0 başlar
-            self.conn.commit()
-            messagebox.showinfo("Başarılı", "Müşteri başarıyla eklendi.", parent=self.musteri_frame)
-            self._musteri_listesini_guncelle() # Listeyi yenile
-            self._musteri_formu_temizle() # Formu temizle
-
-        except sqlite3.IntegrityError:
-            messagebox.showwarning("Uyarı", "Bu telefon numarası zaten kayıtlı.", parent=self.musteri_frame)
-        except sqlite3.Error as e:
-            messagebox.showerror("Veritabanı Hatası", f"Müşteri eklenirken hata oluştu: {e}", parent=self.musteri_frame)
-            self.conn.rollback()
-        except Exception as e:
-            messagebox.showerror("Hata", f"Müşteri eklenirken beklenmedik hata: {e}", parent=self.musteri_frame)
-            print(f"Müşteri ekleme hatası: {e}")
-
-
-    def _musteri_guncelle(self):
-        """Seçili müşteriyi günceller."""
-        if self.secili_musteri_id is None:
-            messagebox.showwarning("Uyarı", "Lütfen önce listeden güncellenecek bir müşteri seçin.", parent=self.musteri_frame)
-            return
-
-        ad = self.musteri_ad_entry.get().strip()
-        soyad = self.musteri_soyad_entry.get().strip()
-        telefon = self.musteri_telefon_entry.get().strip()
-        adres = self.musteri_adres_entry.get().strip()
-        # Bakiye manuel güncellenmiyor, ödeme/veresiye işlemleriyle değişir.
-        # Bu nedenle bakiye entry'sinden değeri almayız.
-
-        if not ad:
-            messagebox.showwarning("Uyarı", "Müşteri Adı boş bırakılamaz.", parent=self.musteri_frame)
-            return
-
-        if not telefon:
-             messagebox.showwarning("Uyarı", "Telefon numarası boş bırakılamaz.", parent=self.musteri_frame)
-             return
-
-
-        try:
-            self.cursor.execute('''
-                UPDATE musteriler
-                SET ad = ?, soyad = ?, telefon = ?, adres = ?
-                WHERE musteri_id = ?
-            ''', (ad, soyad, telefon, adres, self.secili_musteri_id))
-            self.conn.commit()
-            messagebox.showinfo("Başarılı", "Müşteri başarıyla güncellendi.", parent=self.musteri_frame)
-            self._musteri_listesini_guncelle() # Listeyi yenile
-            self._musteri_formu_temizle() # Formu temizle
-
-        except sqlite3.IntegrityError:
-            messagebox.showwarning("Uyarı", "Bu telefon numarası zaten başka bir müşteriye ait.", parent=self.musteri_frame)
-        except sqlite3.Error as e:
-            messagebox.showerror("Veritabanı Hatası", f"Müşteri güncellenirken hata oluştu: {e}", parent=self.musteri_frame)
-            self.conn.rollback()
-        except Exception as e:
-            messagebox.showerror("Hata", f"Müşteri güncellenirken beklenmedik hata: {e}", parent=self.musteri_frame)
-            print(f"Müşteri güncelleme hatası: {e}")
-
-
-    def _musteri_sil(self):
-        """Seçili müşteriyi siler."""
-        if self.secili_musteri_id is None:
-            messagebox.showwarning("Uyarı", "Lütfen önce listeden silinecek bir müşteri seçin.", parent=self.musteri_frame)
-            return
-
-        # Müşteriye ait açık masa veya bakiye var mı kontrol et
-        self.cursor.execute("SELECT COUNT(*) FROM masalar WHERE musteri_id = ? AND durum = 'dolu'", (self.secili_musteri_id,))
-        acik_masa_sayisi = self.cursor.fetchone()[0]
-
-        self.cursor.execute("SELECT cumulative_balance FROM musteriler WHERE musteri_id = ?", (self.secili_musteri_id,))
-        musteri_bakiye_row = self.cursor.fetchone()
-        bakiye = musteri_bakiye_row['cumulative_balance'] if musteri_bakiye_row and musteri_bakiye_row['cumulative_balance'] is not None else 0.0
-
-        if acik_masa_sayisi > 0:
-            messagebox.showwarning("Uyarı", f"Bu müşteriye ait {acik_masa_sayisi} adet açık masa bulunmaktadır. Müşteriyi silemezsiniz.", parent=self.musteri_frame)
-            return
-
-        # Bakiyesi sıfırdan farklıysa silme
-        # Küçük float hatalarını önlemek için bakiye 0'a çok yakınsa da silmeye izin verilebilir
-        if abs(bakiye) > 0.01: # 0.01'den büyükse (pozitif veya negatif bakiye)
-             messagebox.showwarning("Uyarı", f"Müşterinin bakiyesi ({bakiye:.0f} ₺) sıfırdan farklı olduğu için silinemez.", parent=self.musteri_frame)
-             return
-
-
-        # Silinecek müşterinin adını al
-        try:
-            self.cursor.execute("SELECT ad, soyad FROM musteriler WHERE musteri_id = ?", (self.secili_musteri_id,))
-            musteri_info = self.cursor.fetchone()
-            musteri_ad_soyad = f"{musteri_info['ad']} {musteri_info['soyad']}".strip() if musteri_info else "Seçili Müşteri"
-        except Exception as e:
-             print(f"Silinecek müşteri adı alınırken hata: {e}")
-             musteri_ad_soyad = "Seçili Müşteri" # Hata durumunda varsayılan metin
-
-
-        if not messagebox.askyesno("Silme Onayı", f"{musteri_ad_soyad} müşterisini silmek istediğinize emin misiniz?", parent=self.musteri_frame):
-            return
-
-        try:
-            self.cursor.execute("DELETE FROM musteriler WHERE musteri_id = ?", (self.secili_musteri_id,))
-            self.conn.commit()
-            messagebox.showinfo("Başarılı", "Müşteri başarıyla silindi.", parent=self.musteri_frame)
-            self._musteri_listesini_guncelle() # Listeyi yenile
-            self._musteri_formu_temizle() # Formu temizle
-
-        except sqlite3.Error as e:
-            messagebox.showerror("Veritabanı Hatası", f"Müşteri silinirken hata oluştu: {e}", parent=self.musteri_frame)
-            self.conn.rollback()
-        except Exception as e:
-            messagebox.showerror("Hata", f"Müşteri silinirken beklenmedik hata: {e}", parent=self.musteri_frame)
-            print(f"Müşteri silme hatası: {e}")
-
-
-    def _initiate_assign_customer_mode(self):
-        """Müşteri atama modunu başlatır."""
-        if self.secili_musteri_id is None:
-            messagebox.showwarning("Uyarı", "Lütfen önce listeden atanacak bir müşteri seçin.", parent=self.musteri_frame)
-            return
-
-        # Müşteri atama moduna geç
-        self.current_mode = "assign_customer_selection"
-        messagebox.showinfo("Bilgi", "Lütfen müşteriyi atamak istediğiniz masayı seçin.", parent=self.musteri_frame)
-
-        # Masa yönetimi sekmesine geç
-        self.notebook.select(self.masa_frame)
-
-        # Masa butonlarını güncelle (belki renkleri değişebilir veya sadece bilgi mesajı gösterilebilir)
-        # Şimdilik sadece mod bilgisini yazdıralım
-        print(f"Mod Değişti: {self.current_mode}")
-        # İstenirse masa butonlarının görünümü bu moda göre değiştirilebilir.
-
-
-    def _assign_customer_to_clicked_masa(self, masa_no):
-        """Müşteri atama modunda tıklanan masaya seçili müşteriyi atar."""
-        if self.current_mode != "assign_customer_selection":
-            # Bu fonksiyon sadece müşteri atama modunda çalışmalı
-            return
-
-        if self.secili_musteri_id is None:
-            # Mod yanlışlıkla aktif kaldıysa veya müşteri seçimi kaybolduysa
-            messagebox.showwarning("Hata", "Atanacak müşteri seçili değil.", parent=self.masa_frame)
-            self.current_mode = "normal" # Modu sıfırla
-            self._masa_butonlarini_olustur() # Butonları normale döndür
-            return
-
-        try:
-            # Masanın mevcut durumunu ve müşteri ID'sini kontrol et
-            self.cursor.execute("SELECT durum, musteri_id FROM masalar WHERE masa_no = ?", (masa_no,))
-            masa_info = self.cursor.fetchone()
-
-            if not masa_info:
-                 messagebox.showwarning("Uyarı", f"Masa {masa_no} bilgisi bulunamadı.", parent=self.masa_frame)
-                 self.current_mode = "normal" # Modu sıfırla
-                 self._masa_butonlarini_olustur() # Butonları normale döndür
-                 return
-
-            masa_durum = masa_info['durum']
-            mevcut_musteri_id = masa_info['musteri_id']
-
-            # Eğer masa dolu ve başka bir müşteriye aitse uyarı ver
-            if masa_durum == 'dolu' and mevcut_musteri_id is not None and mevcut_musteri_id != self.secili_musteri_id:
-                 # Mevcut müşterinin adını al
-                 self.cursor.execute("SELECT ad, soyad FROM musteriler WHERE musteri_id = ?", (mevcut_musteri_id,))
-                 mevcut_musteri_info = self.cursor.fetchone()
-                 mevcut_musteri_ad = f"{mevcut_musteri_info['ad']} {mevcut_musteri_info['soyad']}".strip() if mevcut_musteri_info else "Başka Bir Müşteri"
-
-                 response = messagebox.askyesno(
-                     "Masa Zaten Dolu",
-                     f"Masa {masa_no} şu anda {mevcut_musteri_ad} müşterisine ait.\n"
-                     "Seçili müşteriyi bu masaya atamak mevcut müşteriyi kaldıracaktır.\n"
-                     "Devam etmek istiyor musunuz?",
-                     parent=self.masa_frame
-                 )
-                 if not response:
-                     self.current_mode = "normal" # Modu sıfırla
-                     self._masa_butonlarini_olustur() # Butonları normale döndür
-                     return # Kullanıcı iptal etti
-
-
-            # Masaya müşteriyi ata ve durumu güncelle (eğer boşsa dolu yap)
-            # Masa doluysa sadece musteri_id güncellenir, toplam değişmez
-            # Masa boşsa durum 'dolu' yapılır, musteri_id atanır, açılış zamanı kaydedilir.
-            current_time = self._tarih_saat_al_db_format()
-
-            if masa_durum == 'boş':
-                self.cursor.execute('''
-                    UPDATE masalar
-                    SET durum = 'dolu', musteri_id = ?, acilis = ?, son_islem_zamani = ?
-                    WHERE masa_no = ?
-                ''', (self.secili_musteri_id, current_time, current_time, masa_no))
-            else: # Masa doluysa
-                 self.cursor.execute('''
-                     UPDATE masalar
-                     SET musteri_id = ?, son_islem_zamani = ?
-                     WHERE masa_no = ?
-                 ''', (self.secili_musteri_id, current_time, masa_no))
-
-
-            self.conn.commit()
-
-            # Müşteri atama modundan çık
-            self.current_mode = "normal"
-            self.secili_musteri_id = None # Seçili müşteri ID'sini sıfırla
-
-            # UI'ı güncelle
-            self._masa_butonlarini_olustur() # Masa butonlarını yenile (yeni müşteri bilgisi görünür)
-            # Eğer atanılan masa aktif masaysa adisyon sekmesindeki müşteri bilgisini de güncelle
-            if self.aktif_masa == masa_no:
-                 self._sepeti_yukle() # Adisyon sekmesindeki müşteri bilgisini günceller
-
-            messagebox.showinfo("Başarılı", f"Müşteri masaya başarıyla atandı.", parent=self.masa_frame)
-
-
-        except sqlite3.Error as e:
-            messagebox.showerror("Veritabanı Hatası", f"Müşteri masaya atanırken hata oluştu: {e}", parent=self.masa_frame)
-            self.conn.rollback()
-            self.current_mode = "normal" # Hata durumunda modu sıfırla
-            self._masa_butonlarini_olustur() # Butonları normale döndür
-        except Exception as e:
-            messagebox.showerror("Hata", f"Müşteri masaya atanırken beklenmedik hata: {e}", parent=self.masa_frame)
-            print(f"Müşteri atama hatası: {e}")
-            self.current_mode = "normal" # Hata durumunda modu sıfırla
-            self._masa_butonlarini_olustur() # Butonları normale döndür
-
-
-    # --- Muhasebe Sekmesi Fonksiyonları ---
-
-    def muhasebe_arayuz_olustur(self):
-        """Muhasebe sekmesi arayüzünü oluşturur."""
-        ttk.Label(self.muhasebe_frame, text="Muhasebe Raporları", font=('Arial', 14, 'bold')).pack(pady=PAD_Y)
-
-        # Rapor Türü Seçimi
-        rapor_secim_frame = ttk.Frame(self.muhasebe_frame)
-        rapor_secim_frame.pack(pady=PAD_Y)
-
-        ttk.Label(rapor_secim_frame, text="Rapor Türü:").pack(side=tk.LEFT, padx=(0, PAD_X))
-        self.muhasebe_rapor_turu_var = tk.StringVar()
-        self.muhasebe_rapor_turu_combobox = ttk.Combobox(rapor_secim_frame, textvariable=self.muhasebe_rapor_turu_var,
-                                                values=["Günlük Satış Özeti", "Tarih Aralığı Satış Özeti", "Masa Geçmişi Detaylı Raporu", "Müşteri Bakiye Raporu", "Ürün Satış Raporu"],
-                                                state="readonly", width=30)
-        self.muhasebe_rapor_turu_combobox.pack(side=tk.LEFT, padx=(0, PAD_X))
-        self.muhasebe_rapor_turu_combobox.set("Günlük Satış Özeti") # Varsayılan değer
-        self.muhasebe_rapor_turu_combobox.bind("<<ComboboxSelected>>", self._muhasebe_rapor_secimi_degisti)
-
-
-        # Tarih Seçimi (Tarih Aralığı Raporu için görünür olacak)
-        self.muhasebe_tarih_araligi_frame = ttk.Frame(self.muhasebe_frame) # Başlangıçta gizli
-
-        ttk.Label(self.muhasebe_tarih_araligi_frame, text="Başlangıç Tarihi (GG.AA.YYYY):").pack(side=tk.LEFT, padx=(0, PAD_X))
-        self.muhasebe_baslangic_tarihi_entry = ttk.Entry(self.muhasebe_tarih_araligi_frame, width=15)
-        self.muhasebe_baslangic_tarihi_entry.pack(side=tk.LEFT, padx=(0, PAD_X))
-        self.muhasebe_baslangic_tarihi_entry.insert(0, datetime.now().strftime(RAPOR_TARIH_FORMATI)) # Varsayılan bugün
-
-        ttk.Label(self.muhasebe_tarih_araligi_frame, text="Bitiş Tarihi (GG.AA.YYYY):").pack(side=tk.LEFT, padx=(0, PAD_X))
-        self.muhasebe_bitis_tarihi_entry = ttk.Entry(self.muhasebe_tarih_araligi_frame, width=15)
-        self.muhasebe_bitis_tarihi_entry.pack(side=tk.LEFT)
-        self.muhasebe_bitis_tarihi_entry.insert(0, datetime.now().strftime(RAPOR_TARIH_FORMATI)) # Varsayılan bugün
-
-        # Rapor Oluştur Butonu
-        ttk.Button(self.muhasebe_frame, text="Rapor Oluştur", style="Rapor.TButton", command=self._muhasebe_rapor_olustur).pack(pady=PAD_Y)
-
-        # Rapor Görüntüleme Alanı
-        self.muhasebe_rapor_text = tk.Text(self.muhasebe_frame, wrap=tk.WORD, font=("Courier New", 10))
-        self.muhasebe_rapor_text.pack(fill=tk.BOTH, expand=True)
-
-        # Rapor seçimi değiştiğinde tarih aralığı frame'ini göster/gizle
-        self._muhasebe_rapor_secimi_degisti()
-
-
-    def _muhasebe_rapor_secimi_degisti(self, event=None):
-        """Muhasebe rapor türü seçimi değiştiğinde tarih aralığı girişlerini gösterir/gizler."""
-        secili_rapor = self.muhasebe_rapor_turu_combobox.get()
-        if secili_rapor == "Tarih Aralığı Satış Özeti" or secili_rapor == "Masa Geçmişi Detaylı Raporu" or secili_rapor == "Ürün Satış Raporu":
-            self.muhasebe_tarih_araligi_frame.pack(pady=(0, PAD_Y), fill=tk.X)
+        
+        hashed_pw = hashlib.sha256(password.encode()).hexdigest()
+        user = self.db.get_one(
+            "SELECT id, username, full_name, role FROM users WHERE username = ? AND password = ? AND is_active = 1",
+            (username, hashed_pw)
+        )
+        
+        if user:
+            self.current_user = {
+                'id': user[0],
+                'username': user[1],
+                'full_name': user[2],
+                'role': user[3]
+            }
+            self.show_main_app()
+            self.update_status(f"Hoş geldiniz, {self.current_user['full_name']}")
         else:
-            self.muhasebe_tarih_araligi_frame.pack_forget()
+            messagebox.showerror("Hata", "Geçersiz kullanıcı adı veya şifre")
+            self.password_entry.delete(0, tk.END)
+    
+    def show_main_app(self):
+        self.login_frame.pack_forget()
+        self.notebook.pack(fill=tk.BOTH, expand=True)
+        self.status_bar.pack(fill=tk.X)
+        
+        # Yetki kontrolü
+        if self.current_user['role'] != 'admin':
+            self.notebook.hide(self.users_tab)
+            self.notebook.hide(self.tables_tab)
+        
+        # Verileri yükle
+        self.load_initial_data()
+    
+    def logout(self):
+        self.current_user = None
+        self.current_order = {
+            'items': [],
+            'table_id': None,
+            'total': 0.0,
+            'discount': 0.0
+        }
+        self.show_login()
+    
+    def load_initial_data(self):
+        # Kategorileri yükle
+        self.load_categories()
+        
+        # Ürünleri yükle
+        self.load_products()
+        
+        # Masaları yükle
+        self.load_tables()
+        
+        # Aktif siparişleri yükle
+        self.load_active_orders()
 
 
-    def _muhasebe_rapor_olustur(self):
-        """Seçilen muhasebe raporunu oluşturur ve görüntüler."""
-        secili_rapor = self.muhasebe_rapor_turu_combobox.get()
-        self.muhasebe_rapor_text.config(state='normal') # Yazılabilir yap
-        self.muhasebe_rapor_text.delete(1.0, tk.END) # Önceki raporu temizle
-
-        try:
-            if secili_rapor == "Günlük Satış Özeti":
-                self._rapor_gunluk_satis_ozeti()
-            elif secili_rapor == "Tarih Aralığı Satış Özeti":
-                self._rapor_tarih_araligi_satis_ozeti()
-            elif secili_rapor == "Masa Geçmişi Detaylı Raporu":
-                self._rapor_masa_gecmisi_detayli()
-            elif secili_rapor == "Müşteri Bakiye Raporu":
-                self._rapor_musteri_bakiye()
-            elif secili_rapor == "Ürün Satış Raporu":
-                 self._rapor_urun_satis()
+    
+    # -------------------- ADİSYON SEKMESİ --------------------
+    def setup_order_tab(self):
+        # Ana çerçeve
+        main_frame = ttk.Frame(self.order_tab)
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        
+        # Sol panel - Ürünler
+        left_panel = ttk.Frame(main_frame)
+        left_panel.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        
+        # Kategori filtreleme
+        filter_frame = ttk.Frame(left_panel)
+        filter_frame.pack(fill=tk.X, pady=5)
+        
+        ttk.Label(filter_frame, text="Kategori:").pack(side=tk.LEFT, padx=5)
+        
+        self.category_filter = tk.StringVar()
+        self.category_combobox = ttk.Combobox(
+            filter_frame,
+            textvariable=self.category_filter,
+            state="readonly"
+        )
+        self.category_combobox.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
+        self.category_combobox.bind("<<ComboboxSelected>>", lambda e: self.load_products())
+        
+        # Ürün butonları
+        self.products_canvas = tk.Canvas(left_panel)
+        self.products_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        
+        scrollbar = ttk.Scrollbar(left_panel, orient=tk.VERTICAL, command=self.products_canvas.yview)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        self.products_canvas.configure(yscrollcommand=scrollbar.set)
+        self.products_canvas.bind('<Configure>', lambda e: self.products_canvas.configure(scrollregion=self.products_canvas.bbox("all")))
+        
+        self.products_frame = ttk.Frame(self.products_canvas)
+        self.products_canvas.create_window((0,0), window=self.products_frame, anchor="nw")
+        
+        # Sağ panel - Sipariş
+        right_panel = ttk.Frame(main_frame, width=400)
+        right_panel.pack(side=tk.RIGHT, fill=tk.BOTH)
+        
+        # Masa seçimi
+        table_frame = ttk.Frame(right_panel)
+        table_frame.pack(fill=tk.X, pady=5)
+        
+        ttk.Label(table_frame, text="Masa:").pack(side=tk.LEFT, padx=5)
+        
+        self.table_var = tk.StringVar()
+        self.table_combobox = ttk.Combobox(
+            table_frame,
+            textvariable=self.table_var,
+            state="readonly"
+        )
+        self.table_combobox.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
+        self.table_combobox.bind("<<ComboboxSelected>>", self.select_table)
+        
+        # Sipariş listesi
+        order_list_frame = ttk.Frame(right_panel)
+        order_list_frame.pack(fill=tk.BOTH, expand=True)
+        
+        columns = ("product", "price", "qty", "total")
+        self.order_tree = ttk.Treeview(
+            order_list_frame,
+            columns=columns,
+            show="headings",
+            selectmode="browse"
+        )
+        
+        # Kolon başlıkları
+        self.order_tree.heading("product", text="Ürün")
+        self.order_tree.heading("price", text="Fiyat")
+        self.order_tree.heading("qty", text="Adet")
+        self.order_tree.heading("total", text="Tutar")
+        
+        # Kolon genişlikleri
+        self.order_tree.column("product", width=150)
+        self.order_tree.column("price", width=80, anchor=tk.E)
+        self.order_tree.column("qty", width=50, anchor=tk.CENTER)
+        self.order_tree.column("total", width=80, anchor=tk.E)
+        
+        self.order_tree.pack(fill=tk.BOTH, expand=True)
+        
+        # Toplam bilgisi
+        total_frame = ttk.Frame(right_panel)
+        total_frame.pack(fill=tk.X, pady=5)
+        
+        ttk.Label(total_frame, text="Ara Toplam:").pack(side=tk.LEFT, padx=5)
+        self.subtotal_label = ttk.Label(total_frame, text="0.00 TL")
+        self.subtotal_label.pack(side=tk.LEFT, padx=5)
+        
+        ttk.Label(total_frame, text="İndirim:").pack(side=tk.LEFT, padx=5)
+        self.discount_label = ttk.Label(total_frame, text="0.00 TL")
+        self.discount_label.pack(side=tk.LEFT, padx=5)
+        
+        ttk.Label(total_frame, text="Toplam:", font=('Helvetica', 10, 'bold')).pack(side=tk.LEFT, padx=5)
+        self.total_label = ttk.Label(total_frame, text="0.00 TL", font=('Helvetica', 10, 'bold'))
+        self.total_label.pack(side=tk.LEFT, padx=5)
+        
+        # Butonlar
+        button_frame = ttk.Frame(right_panel)
+        button_frame.pack(fill=tk.X, pady=5)
+        
+        ttk.Button(
+            button_frame,
+            text="Ürün Çıkar",
+            command=self.remove_item
+        ).pack(side=tk.LEFT, padx=2, fill=tk.X, expand=True)
+        
+        ttk.Button(
+            button_frame,
+            text="Adet Arttır",
+            command=self.increase_quantity
+        ).pack(side=tk.LEFT, padx=2, fill=tk.X, expand=True)
+        
+        ttk.Button(
+            button_frame,
+            text="Adet Azalt",
+            command=self.decrease_quantity
+        ).pack(side=tk.LEFT, padx=2, fill=tk.X, expand=True)
+        
+        ttk.Button(
+            button_frame,
+            text="Temizle",
+            command=self.clear_order
+        ).pack(side=tk.LEFT, padx=2, fill=tk.X, expand=True)
+        
+        ttk.Button(
+            button_frame,
+            text="Siparişi Tamamla",
+            command=self.complete_order,
+            style="Accent.TButton"
+        ).pack(side=tk.LEFT, padx=2, fill=tk.X, expand=True)
+    
+    def load_categories(self):
+        categories = self.db.get_all("SELECT id, name FROM categories WHERE is_active = 1 ORDER BY sort_order, name")
+        if categories:
+            self.category_combobox['values'] = ["Tüm Kategoriler"] + [cat[1] for cat in categories]
+            self.category_combobox.current(0)
+    
+    def load_products(self):
+        # Önceki ürünleri temizle
+        for widget in self.products_frame.winfo_children():
+            widget.destroy()
+        
+        # Kategori filtresi
+        category = self.category_filter.get()
+        if category == "Tüm Kategoriler" or not category:
+            query = """SELECT p.id, p.name, p.price, p.stock, p.image_path 
+                       FROM products p 
+                       WHERE p.is_active = 1 
+                       ORDER BY p.name"""
+            params = ()
+        else:
+            query = """SELECT p.id, p.name, p.price, p.stock, p.image_path 
+                       FROM products p 
+                       JOIN categories c ON p.category_id = c.id 
+                       WHERE c.name = ? AND p.is_active = 1 
+                       ORDER BY p.name"""
+            params = (category,)
+        
+        products = self.db.get_all(query, params)
+        
+        if not products:
+            ttk.Label(self.products_frame, text="Ürün bulunamadı").pack(pady=20)
+            return
+        
+        # Ürün butonlarını oluştur
+        for i, (product_id, name, price, stock, image_path) in enumerate(products):
+            btn_frame = ttk.Frame(self.products_frame)
+            btn_frame.pack(fill=tk.X, pady=2, padx=2)
+            
+            # Ürün resmi (varsa)
+            if image_path and os.path.exists(image_path):
+                try:
+                    img = Image.open(image_path)
+                    img = img.resize((50, 50), Image.LANCZOS)
+                    photo = ImageTk.PhotoImage(img)
+                    img_label = ttk.Label(btn_frame, image=photo)
+                    img_label.image = photo
+                    img_label.pack(side=tk.LEFT, padx=5)
+                except:
+                    pass
+            
+            # Ürün bilgileri
+            btn_text = f"{name}\n{price:.2f} TL"
+            if stock <= 0:
+                btn_text += "\n(STOK YOK)"
+                btn = ttk.Button(
+                    btn_frame,
+                    text=btn_text,
+                    state=tk.DISABLED,
+                    style="Disabled.TButton"
+                )
             else:
-                self.muhasebe_rapor_text.insert(tk.END, "Lütfen bir rapor türü seçin.")
-
-        except Exception as e:
-            self.muhasebe_rapor_text.insert(tk.END, f"Rapor oluşturulurken bir hata oluştu: {e}")
-            print(f"Rapor oluşturma hatası: {e}")
-
-        self.muhasebe_rapor_text.config(state='disabled') # Salt okunur yap
-
-
-    def _parse_date_entry(self, date_entry_widget):
-        """GG.AA.YYYY formatındaki girişten datetime objesi döndürür."""
-        date_str = date_entry_widget.get().strip()
-        if not date_str:
-            return None
+                btn = ttk.Button(
+                    btn_frame,
+                    text=btn_text,
+                    command=lambda p_id=product_id, p_name=name, p_price=price: self.add_to_order(p_id, p_name, p_price),
+                    style="Product.TButton"
+                )
+            
+            btn.pack(side=tk.LEFT, fill=tk.X, expand=True)
+    
+    def load_tables(self):
+        tables = self.db.get_all("SELECT id, name FROM tables WHERE is_active = 1 ORDER BY name")
+        if tables:
+            self.table_combobox['values'] = [table[1] for table in tables]
+    
+    def add_to_order(self, product_id, product_name, product_price):
+        # Sepete ekle veya adeti arttır
+        for item in self.current_order['items']:
+            if item['product_id'] == product_id:
+                item['quantity'] += 1
+                self.update_order_display()
+                return
+        
+        # Yeni ürün ekle
+        self.current_order['items'].append({
+            'product_id': product_id,
+            'product_name': product_name,
+            'price': product_price,
+            'quantity': 1
+        })
+        
+        self.update_order_display()
+    
+    def remove_item(self):
+        selected = self.order_tree.selection()
+        if not selected:
+            messagebox.showwarning("Uyarı", "Lütfen bir ürün seçin")
+            return
+        
+        item = self.order_tree.item(selected[0])
+        product_id = item['values'][0]
+        
+        # Ürünü sepetten çıkar
+        for i, item in enumerate(self.current_order['items']):
+            if item['product_id'] == product_id:
+                self.current_order['items'].pop(i)
+                break
+        
+        self.update_order_display()
+    
+    def increase_quantity(self):
+        selected = self.order_tree.selection()
+        if not selected:
+            messagebox.showwarning("Uyarı", "Lütfen bir ürün seçin")
+            return
+        
+        item = self.order_tree.item(selected[0])
+        product_id = item['values'][0]
+        
+        # Adeti arttır
+        for item in self.current_order['items']:
+            if item['product_id'] == product_id:
+                item['quantity'] += 1
+                break
+        
+        self.update_order_display()
+    
+    def decrease_quantity(self):
+        selected = self.order_tree.selection()
+        if not selected:
+            messagebox.showwarning("Uyarı", "Lütfen bir ürün seçin")
+            return
+        
+        item = self.order_tree.item(selected[0])
+        product_id = item['values'][0]
+        
+        # Adeti azalt
+        for i, item in enumerate(self.current_order['items']):
+            if item['product_id'] == product_id:
+                if item['quantity'] > 1:
+                    item['quantity'] -= 1
+                else:
+                    # Adet 1 ise ürünü çıkar
+                    self.current_order['items'].pop(i)
+                break
+        
+        self.update_order_display()
+    
+    def select_table(self, event):
+        table_name = self.table_var.get()
+        if table_name:
+            table = self.db.get_one("SELECT id FROM tables WHERE name = ?", (table_name,))
+            if table:
+                self.current_order['table_id'] = table[0]
+                self.update_status(f"Masa seçildi: {table_name}")
+    
+    def update_order_display(self):
+        # Listeyi temizle
+        for item in self.order_tree.get_children():
+            self.order_tree.delete(item)
+        
+        # Toplamları hesapla
+        subtotal = 0.0
+        
+        # Ürünleri ekle
+        for item in self.current_order['items']:
+            total = item['price'] * item['quantity']
+            subtotal += total
+            
+            self.order_tree.insert("", tk.END, values=(
+                item['product_id'],
+                item['product_name'],
+                f"{item['price']:.2f}",
+                item['quantity'],
+                f"{total:.2f}"
+            ))
+        
+        # Toplamları güncelle
+        self.subtotal_label.config(text=f"{subtotal:.2f} TL")
+        self.discount_label.config(text=f"{self.current_order['discount']:.2f} TL")
+        self.total_label.config(text=f"{subtotal - self.current_order['discount']:.2f} TL")
+        
+        # Genel toplamı kaydet
+        self.current_order['total'] = subtotal - self.current_order['discount']
+    
+    def clear_order(self):
+        self.current_order = {
+            'items': [],
+            'table_id': None,
+            'total': 0.0,
+            'discount': 0.0
+        }
+        self.table_var.set("")
+        self.update_order_display()
+        self.update_status("Sipariş temizlendi")
+    
+    def complete_order(self):
+        if not self.current_order['items']:
+            messagebox.showwarning("Uyarı", "Sipariş boş")
+            return
+        
+        if not self.current_order['table_id']:
+            messagebox.showwarning("Uyarı", "Lütfen masa seçin")
+            return
+        
+        # Siparişi veritabanına kaydet
         try:
-            # Kullanıcının girdiği formatı parse et
-            return datetime.strptime(date_str, RAPOR_TARIH_FORMATI)
-        except ValueError:
-            messagebox.showwarning("Geçersiz Tarih Formatı", f"Lütfen tarihi {RAPOR_TARIH_FORMATI} formatında girin.", parent=self.muhasebe_frame)
-            return None
-        except Exception as e:
-             print(f"Tarih parse hatası: {e}")
-             messagebox.showerror("Hata", f"Tarih işlenirken beklenmedik hata: {e}", parent=self.muhasebe_frame)
-             return None
-
-
-    def _rapor_gunluk_satis_ozeti(self):
-        """Günlük satış özet raporunu oluşturur."""
-        bugun = datetime.now().strftime(RAPOR_TARIH_FORMATI)
-        baslangic_tarihi_db = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).strftime(DB_DATE_FORMAT)
-        bitis_tarihi_db = datetime.now().replace(hour=23, minute=59, second=59, microsecond=999999).strftime(DB_DATE_FORMAT)
-
-
-        self.muhasebe_rapor_text.insert(tk.END, f"=== Günlük Satış Özeti ({bugun}) ===\n\n")
-
-        try:
-            # Toplam satışları ödeme türüne göre al
-            self.cursor.execute('''
-                SELECT odeme_turu, COALESCE(SUM(toplam), 0) as toplam_satis
-                FROM siparis_gecmisi
-                WHERE tarih BETWEEN ? AND ?
-                GROUP BY odeme_turu
-            ''', (baslangic_tarihi_db, bitis_tarihi_db))
-            satis_ozeti = self.cursor.fetchall()
-
-            if satis_ozeti:
-                for row in satis_ozeti:
-                    self.muhasebe_rapor_text.insert(tk.END, f"{row['odeme_turu']}: {row['toplam_satis']:.0f} ₺\n")
-            else:
-                self.muhasebe_rapor_text.insert(tk.END, "Bugün henüz satış yapılmadı.\n")
-
-            # Toplam ara ödemeleri al
-            self.cursor.execute('''
-                 SELECT COALESCE(SUM(miktar), 0) as toplam_ara_odeme
-                 FROM ara_odemeler
-                 WHERE tarih BETWEEN ? AND ?
-            ''', (baslangic_tarihi_db, bitis_tarihi_db))
-            ara_odeme_row = self.cursor.fetchone()
-            toplam_ara_odeme = ara_odeme_row['toplam_ara_odeme'] if ara_odeme_row else 0.0
-
-            self.muhasebe_rapor_text.insert(tk.END, f"\nToplam Ara Ödemeler: {toplam_ara_odeme:.0f} ₺\n")
-
-
-            # En çok satılan ürünleri bul
-            self.muhasebe_rapor_text.insert(tk.END, "\n--- En Çok Satılan Ürünler ---\n")
-            self.cursor.execute('''
-                SELECT sd.urun_adi, SUM(sd.miktar) as toplam_miktar, SUM(sd.tutar) as toplam_tutar
-                FROM siparis_detaylari sd
-                JOIN siparis_gecmisi sg ON sd.siparis_id = sg.id
-                WHERE sg.tarih BETWEEN ? AND ?
-                GROUP BY sd.urun_adi
-                ORDER BY toplam_miktar DESC
-                LIMIT 10 -- İlk 10 ürün
-            ''', (baslangic_tarihi_db, bitis_tarihi_db))
-            en_cok_satilanlar = self.cursor.fetchall()
-
-            if en_cok_satilanlar:
-                for urun in en_cok_satilanlar:
-                    self.muhasebe_rapor_text.insert(tk.END, f"{urun['urun_adi']}: {urun['toplam_miktar']} adet ({urun['toplam_tutar']:.0f} ₺)\n")
-            else:
-                self.muhasebe_rapor_text.insert(tk.END, "Bugün henüz ürün satışı yapılmadı.\n")
-
-
+            # Sipariş başlığı
+            order_id = self.db.execute(
+                """INSERT INTO orders 
+                   (table_id, user_id, total, discount, date) 
+                   VALUES (?, ?, ?, ?, ?)""",
+                (
+                    self.current_order['table_id'],
+                    self.current_user['id'],
+                    self.current_order['total'],
+                    self.current_order['discount'],
+                    datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                ),
+                commit=True
+            ).lastrowid
+            
+            # Sipariş detayları
+            for item in self.current_order['items']:
+                self.db.execute(
+                    """INSERT INTO order_items 
+                       (order_id, product_id, quantity, price) 
+                       VALUES (?, ?, ?, ?)""",
+                    (
+                        order_id,
+                        item['product_id'],
+                        item['quantity'],
+                        item['price']
+                    ),
+                    commit=True
+                )
+            
+            # Stokları güncelle
+            for item in self.current_order['items']:
+                self.db.execute(
+                    "UPDATE products SET stock = stock - ? WHERE id = ?",
+                    (item['quantity'], item['product_id']),
+                    commit=True
+                )
+            
+            # Fiş yazdır
+            self.print_receipt(order_id)
+            
+            messagebox.showinfo("Başarılı", f"Sipariş #{order_id} kaydedildi\nToplam: {self.current_order['total']:.2f} TL")
+            
+            # Siparişi temizle
+            self.clear_order()
+            
+            # Ürünleri yeniden yükle (stoklar güncellendi)
+            self.load_products()
+            
         except sqlite3.Error as e:
-            self.muhasebe_rapor_text.insert(tk.END, f"\nVeritabanı hatası: {e}")
-            print(f"Günlük satış raporu hatası: {e}")
-        except Exception as e:
-            self.muhasebe_rapor_text.insert(tk.END, f"\nBeklenmedik hata: {e}")
-            print(f"Günlük satış raporu beklenmedik hata: {e}")
-
-
-    def _rapor_tarih_araligi_satis_ozeti(self):
-        """Belirtilen tarih aralığı için satış özet raporunu oluşturur."""
-        baslangic_dt = self._parse_date_entry(self.muhasebe_baslangic_tarihi_entry)
-        bitis_dt = self._parse_date_entry(self.muhasebe_bitis_tarihi_entry)
-
-        if baslangic_dt is None or bitis_dt is None:
-            return # Hatalı tarih formatı uyarısı parse_date_entry içinde verildi
-
-        # Bitiş tarihini gün sonuna ayarla
-        bitis_dt = bitis_dt.replace(hour=23, minute=59, second=59, microsecond=999999)
-
-        baslangic_tarihi_db = baslangic_dt.strftime(DB_DATE_FORMAT)
-        bitis_tarihi_db = bitis_dt.strftime(DB_DATE_FORMAT)
-
-        self.muhasebe_rapor_text.insert(tk.END, f"=== Satış Özeti Raporu ({baslangic_dt.strftime(RAPOR_TARIH_FORMATI)} - {bitis_dt.strftime(RAPOR_TARIH_FORMATI)}) ===\n\n")
-
+            messagebox.showerror("Hata", f"Sipariş kaydedilirken hata:\n{str(e)}")
+    
+    def print_receipt(self, order_id):
         try:
-            # Toplam satışları ödeme türüne göre al
-            self.cursor.execute('''
-                SELECT odeme_turu, COALESCE(SUM(toplam), 0) as toplam_satis
-                FROM siparis_gecmisi
-                WHERE tarih BETWEEN ? AND ?
-                GROUP BY odeme_turu
-            ''', (baslangic_tarihi_db, bitis_tarihi_db))
-            satis_ozeti = self.cursor.fetchall()
-
-            if satis_ozeti:
-                for row in satis_ozeti:
-                    self.muhasebe_rapor_text.insert(tk.END, f"{row['odeme_turu']}: {row['toplam_satis']:.0f} ₺\n")
-            else:
-                self.muhasebe_rapor_text.insert(tk.END, "Belirtilen tarih aralığında satış yapılmadı.\n")
-
-            # Toplam ara ödemeleri al
-            self.cursor.execute('''
-                 SELECT COALESCE(SUM(miktar), 0) as toplam_ara_odeme
-                 FROM ara_odemeler
-                 WHERE tarih BETWEEN ? AND ?
-            ''', (baslangic_tarihi_db, bitis_tarihi_db))
-            ara_odeme_row = self.cursor.fetchone()
-            toplam_ara_odeme = ara_odeme_row['toplam_ara_odeme'] if ara_odeme_row else 0.0
-
-            self.muhasebe_rapor_text.insert(tk.END, f"\nToplam Ara Ödemeler: {toplam_ara_odeme:.0f} ₺\n")
-
-
-            # En çok satılan ürünleri bul (bu tarih aralığı için)
-            self.muhasebe_rapor_text.insert(tk.END, "\n--- En Çok Satılan Ürünler ---\n")
-            self.cursor.execute('''
-                SELECT sd.urun_adi, SUM(sd.miktar) as toplam_miktar, SUM(sd.tutar) as toplam_tutar
-                FROM siparis_detaylari sd
-                JOIN siparis_gecmisi sg ON sd.siparis_id = sg.id
-                WHERE sg.tarih BETWEEN ? AND ?
-                GROUP BY sd.urun_adi
-                ORDER BY toplam_miktar DESC
-                LIMIT 10 -- İlk 10 ürün
-            ''', (baslangic_tarihi_db, bitis_tarihi_db))
-            en_cok_satilanlar = self.cursor.fetchall()
-
-            if en_cok_satilanlar:
-                for urun in en_cok_satilanlar:
-                    self.muhasebe_rapor_text.insert(tk.END, f"{urun['urun_adi']}: {urun['toplam_miktar']} adet ({urun['toplam_tutar']:.0f} ₺)\n")
-            else:
-                self.muhasebe_rapor_text.insert(tk.END, "Belirtilen tarih aralığında ürün satışı yapılmadı.\n")
-
-
-        except sqlite3.Error as e:
-            self.muhasebe_rapor_text.insert(tk.END, f"\nVeritabanı hatası: {e}")
-            print(f"Tarih aralığı satış raporu hatası: {e}")
+            # Fiş içeriğini oluştur
+            receipt = f"""
+            {Config.COMPANY_NAME}
+            {Config.ADDRESS}
+            Tel: {Config.PHONE}
+            Vergi No: {Config.TAX_NUMBER}
+            --------------------------------
+            Sipariş No: #{order_id}
+            Tarih: {datetime.now().strftime("%d.%m.%Y %H:%M")}
+            Masa: {self.table_var.get()}
+            Personel: {self.current_user['full_name']}
+            --------------------------------
+            """
+            
+            # Ürünler
+            for item in self.current_order['items']:
+                receipt += f"{item['product_name']} x{item['quantity']} = {item['price'] * item['quantity']:.2f} TL\n"
+            
+            receipt += f"""
+            --------------------------------
+            Ara Toplam: {self.current_order['total'] + self.current_order['discount']:.2f} TL
+            İndirim: {self.current_order['discount']:.2f} TL
+            TOPLAM: {self.current_order['total']:.2f} TL
+            --------------------------------
+            Teşekkür ederiz!
+            """
+            
+            # Yazıcıya gönder
+            if sys.platform == "win32":
+                printer_name = win32print.GetDefaultPrinter()
+                hprinter = win32print.OpenPrinter(printer_name)
+                try:
+                    win32print.StartDocPrinter(hprinter, 1, ("Cafe Receipt", None, "RAW"))
+                    win32print.StartPagePrinter(hprinter)
+                    win32print.WritePrinter(hprinter, receipt.encode('utf-8'))
+                    win32print.EndPagePrinter(hprinter)
+                finally:
+                    win32print.ClosePrinter(hprinter)
+            
+            # Log dosyasına yaz
+            with open("receipts.log", "a", encoding="utf-8") as f:
+                f.write(receipt)
+                f.write("\n\n")
+            
         except Exception as e:
-            self.muhasebe_rapor_text.insert(tk.END, f"\nBeklenmedik hata: {e}")
-            print(f"Tarih aralığı satış raporu beklenmedik hata: {e}")
+            messagebox.showwarning("Uyarı", f"Fiş yazdırılamadı:\n{str(e)}")
 
+# ÜRÜN YÖNETİMİ SEKMESİ (300+ satır)
+def setup_products_tab(self):
+    # Ana çerçeve
+    main_frame = ttk.Frame(self.products_tab)
+    main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+    
+    # Sol panel - Ürün listesi
+    list_frame = ttk.Frame(main_frame, width=400)
+    list_frame.pack(side=tk.LEFT, fill=tk.BOTH, padx=5)
+    
+    # Arama ve filtreleme
+    search_frame = ttk.Frame(list_frame)
+    search_frame.pack(fill=tk.X, pady=5)
+    
+    ttk.Label(search_frame, text="Ara:").pack(side=tk.LEFT)
+    self.product_search = ttk.Entry(search_frame)
+    self.product_search.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
+    self.product_search.bind("<KeyRelease>", self.filter_products)
+    
+    # Kategori filtreleme
+    self.product_category_filter = ttk.Combobox(search_frame, state="readonly")
+    self.product_category_filter.pack(side=tk.LEFT, padx=5)
+    self.product_category_filter.bind("<<ComboboxSelected>>", self.filter_products)
+    
+    # Ürün listesi (Treeview)
+    self.products_tree = ttk.Treeview(
+        list_frame,
+        columns=("id", "name", "category", "price", "stock"),
+        show="headings",
+        selectmode="browse"
+    )
+    
+    # Kolon başlıkları
+    self.products_tree.heading("id", text="ID", anchor=tk.CENTER)
+    self.products_tree.heading("name", text="Ürün Adı")
+    self.products_tree.heading("category", text="Kategori")
+    self.products_tree.heading("price", text="Fiyat")
+    self.products_tree.heading("stock", text="Stok")
+    
+    # Kolon genişlikleri
+    self.products_tree.column("id", width=50, anchor=tk.CENTER)
+    self.products_tree.column("name", width=150)
+    self.products_tree.column("category", width=100)
+    self.products_tree.column("price", width=80, anchor=tk.E)
+    self.products_tree.column("stock", width=60, anchor=tk.E)
+    
+    self.products_tree.pack(fill=tk.BOTH, expand=True)
+    self.products_tree.bind("<<TreeviewSelect>>", self.on_product_select)
+    
+    # Scrollbar
+    scrollbar = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=self.products_tree.yview)
+    scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+    self.products_tree.configure(yscrollcommand=scrollbar.set)
+    
+    # Sağ panel - Ürün detay/form
+    form_frame = ttk.Frame(main_frame)
+    form_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=5)
+    
+    # Ürün bilgileri
+    ttk.Label(form_frame, text="Ürün Bilgileri", font=('Helvetica', 12, 'bold')).pack(pady=5)
+    
+    # Ürün resmi
+    self.product_image_label = ttk.Label(form_frame)
+    self.product_image_label.pack()
+    
+    # Form alanları
+    fields_frame = ttk.Frame(form_frame)
+    fields_frame.pack(fill=tk.X, pady=5)
+    
+    ttk.Label(fields_frame, text="Ürün Adı:").grid(row=0, column=0, sticky="e", padx=5, pady=2)
+    self.product_name = ttk.Entry(fields_frame)
+    self.product_name.grid(row=0, column=1, sticky="ew", padx=5, pady=2)
+    
+    ttk.Label(fields_frame, text="Kategori:").grid(row=1, column=0, sticky="e", padx=5, pady=2)
+    self.product_category = ttk.Combobox(fields_frame, state="readonly")
+    self.product_category.grid(row=1, column=1, sticky="ew", padx=5, pady=2)
+    
+    ttk.Label(fields_frame, text="Fiyat:").grid(row=2, column=0, sticky="e", padx=5, pady=2)
+    self.product_price = ttk.Entry(fields_frame)
+    self.product_price.grid(row=2, column=1, sticky="ew", padx=5, pady=2)
+    
+    ttk.Label(fields_frame, text="Stok:").grid(row=3, column=0, sticky="e", padx=5, pady=2)
+    self.product_stock = ttk.Entry(fields_frame)
+    self.product_stock.grid(row=3, column=1, sticky="ew", padx=5, pady=2)
+    
+    ttk.Label(fields_frame, text="Birim:").grid(row=4, column=0, sticky="e", padx=5, pady=2)
+    self.product_unit = ttk.Combobox(fields_frame, values=["adet", "kg", "lt", "porsiyon"])
+    self.product_unit.grid(row=4, column=1, sticky="ew", padx=5, pady=2)
+    
+    ttk.Label(fields_frame, text="Barkod:").grid(row=5, column=0, sticky="e", padx=5, pady=2)
+    self.product_barcode = ttk.Entry(fields_frame)
+    self.product_barcode.grid(row=5, column=1, sticky="ew", padx=5, pady=2)
+    
+    ttk.Label(fields_frame, text="Açıklama:").grid(row=6, column=0, sticky="ne", padx=5, pady=2)
+    self.product_description = tk.Text(fields_frame, height=4, width=30)
+    self.product_description.grid(row=6, column=1, sticky="ew", padx=5, pady=2)
+    
+    # Resim seçme butonu
+    self.product_image_path = ""
+    ttk.Button(
+        fields_frame, 
+        text="Resim Seç", 
+        command=self.select_product_image
+    ).grid(row=7, column=1, sticky="e", padx=5, pady=5)
+    
+    # Butonlar
+    buttons_frame = ttk.Frame(form_frame)
+    buttons_frame.pack(fill=tk.X, pady=10)
+    
+    ttk.Button(
+        buttons_frame,
+        text="Yeni",
+        command=self.new_product,
+        style="Accent.TButton"
+    ).pack(side=tk.LEFT, padx=5)
+    
+    ttk.Button(
+        buttons_frame,
+        text="Kaydet",
+        command=self.save_product,
+        style="Accent.TButton"
+    ).pack(side=tk.LEFT, padx=5)
+    
+    ttk.Button(
+        buttons_frame,
+        text="Sil",
+        command=self.delete_product,
+        style="Accent.TButton"
+    ).pack(side=tk.RIGHT, padx=5)
+    
+    # Verileri yükle
+    self.load_product_categories()
+    self.load_products_list()
 
-    def _rapor_masa_gecmisi_detayli(self):
-        """Belirtilen tarih aralığı için masa geçmişi detaylı raporunu oluşturur."""
-        baslangic_dt = self._parse_date_entry(self.muhasebe_baslangic_tarihi_entry)
-        bitis_dt = self._parse_date_entry(self.muhasebe_bitis_tarihi_entry)
+def load_product_categories(self):
+    categories = self.db.get_all("SELECT id, name FROM categories WHERE is_active = 1 ORDER BY name")
+    if categories:
+        self.product_category['values'] = [cat[1] for cat in categories]
+        self.product_category_filter['values'] = ["Tüm Kategoriler"] + [cat[1] for cat in categories]
+        self.product_category_filter.current(0)
 
-        if baslangic_dt is None or bitis_dt is None:
-            return # Hatalı tarih formatı uyarısı parse_date_entry içinde verildi
+def load_products_list(self):
+    # Listeyi temizle
+    for item in self.products_tree.get_children():
+        self.products_tree.delete(item)
+    
+    # Veritabanından ürünleri çek
+    products = self.db.get_all(
+        """SELECT p.id, p.name, c.name, p.price, p.stock 
+           FROM products p 
+           JOIN categories c ON p.category_id = c.id 
+           WHERE p.is_active = 1 
+           ORDER BY p.name"""
+    )
+    
+    if products:
+        for product in products:
+            self.products_tree.insert("", tk.END, values=product)
 
-        # Bitiş tarihini gün sonuna ayarla
-        bitis_dt = bitis_dt.replace(hour=23, minute=59, second=59, microsecond=999999)
+def filter_products(self, event=None):
+    search_term = self.product_search.get().lower()
+    category = self.product_category_filter.get()
+    
+    # Listeyi temizle
+    for item in self.products_tree.get_children():
+        self.products_tree.delete(item)
+    
+    # Filtreleme sorgusu
+    query = """SELECT p.id, p.name, c.name, p.price, p.stock 
+               FROM products p 
+               JOIN categories c ON p.category_id = c.id 
+               WHERE p.is_active = 1"""
+    
+    params = []
+    
+    if category and category != "Tüm Kategoriler":
+        query += " AND c.name = ?"
+        params.append(category)
+    
+    if search_term:
+        query += " AND LOWER(p.name) LIKE ?"
+        params.append(f"%{search_term}%")
+    
+    query += " ORDER BY p.name"
+    
+    # Filtrelenmiş ürünleri yükle
+    products = self.db.get_all(query, params)
+    
+    if products:
+        for product in products:
+            self.products_tree.insert("", tk.END, values=product)
 
-        baslangic_tarihi_db = baslangic_dt.strftime(DB_DATE_FORMAT)
-        bitis_tarihi_db = bitis_dt.strftime(DB_DATE_FORMAT)
+def on_product_select(self, event):
+    selected = self.products_tree.selection()
+    if not selected:
+        return
+    
+    product_id = self.products_tree.item(selected[0])['values'][0]
+    self.load_product_details(product_id)
 
-        self.muhasebe_rapor_text.insert(tk.END, f"=== Masa Geçmişi Detaylı Raporu ({baslangic_dt.strftime(RAPOR_TARIH_FORMATI)} - {bitis_dt.strftime(RAPOR_TARIH_FORMATI)}) ===\n\n")
+def load_product_details(self, product_id):
+    product = self.db.get_one(
+        """SELECT p.name, p.category_id, c.name, p.price, p.stock, 
+                  p.unit, p.barcode, p.description, p.image_path 
+           FROM products p 
+           JOIN categories c ON p.category_id = c.id 
+           WHERE p.id = ?""",
+        (product_id,)
+    )
+    
+    if product:
+        # Form alanlarını doldur
+        self.product_name.delete(0, tk.END)
+        self.product_name.insert(0, product[0])
+        
+        # Kategoriyi seç
+        categories = self.product_category['values']
+        if product[2] in categories:
+            self.product_category.set(product[2])
+        
+        self.product_price.delete(0, tk.END)
+        self.product_price.insert(0, str(product[3]))
+        
+        self.product_stock.delete(0, tk.END)
+        self.product_stock.insert(0, str(product[4]))
+        
+        self.product_unit.set(product[5])
+        
+        self.product_barcode.delete(0, tk.END)
+        self.product_barcode.insert(0, product[6] or "")
+        
+        self.product_description.delete(1.0, tk.END)
+        self.product_description.insert(1.0, product[7] or "")
+        
+        # Resmi yükle
+        self.product_image_path = product[8] or ""
+        self.load_product_image()
+        
+        # Geçerli ürün ID'sini sakla
+        self.current_product_id = product_id
 
+def load_product_image(self):
+    if self.product_image_path and os.path.exists(self.product_image_path):
         try:
-            # Masa geçmişini çek
-            # Masa geçmişi tablosu kapanış tarihini içerir
-            self.cursor.execute('''
-                SELECT mg.kayit_id, mg.masa_no, mg.acilis, mg.kapanis, mg.toplam, mg.odeme_turu, m.ad, m.soyad
-                FROM masa_gecmisi mg
-                LEFT JOIN musteriler m ON mg.musteri_id = m.musteri_id
-                WHERE mg.kapanis BETWEEN ? AND ?
-                ORDER BY mg.kapanis ASC
-            ''', (baslangic_tarihi_db, bitis_tarihi_db))
-            masa_gecmisi_kayitlari = self.cursor.fetchall()
+            img = Image.open(self.product_image_path)
+            img = img.resize((200, 200), Image.LANCZOS)
+            photo = ImageTk.PhotoImage(img)
+            self.product_image_label.config(image=photo)
+            self.product_image_label.image = photo
+        except:
+            self.product_image_label.config(image="")
+    else:
+        self.product_image_label.config(image="")
 
-            if masa_gecmisi_kayitlari:
-                for kayit in masa_gecmisi_kayitlari:
-                    masa_no = kayit['masa_no']
-                    acilis_str = kayit['acilis']
-                    kapanis_str = kayit['kapanis']
-                    toplam = kayit['toplam'] if kayit['toplam'] is not None else 0.0
-                    odeme_turu = kayit['odeme_turu'] if kayit['odeme_turu'] is not None else "-"
-                    musteri_ad_soyad = f"{kayit['ad']} {kayit['soyad']}".strip() if kayit['ad'] or kayit['soyad'] else "Misafir"
+def select_product_image(self):
+    file_path = filedialog.askopenfilename(
+        title="Ürün Resmi Seç",
+        filetypes=[("Image Files", "*.jpg *.jpeg *.png")]
+    )
+    
+    if file_path:
+        self.product_image_path = file_path
+        self.load_product_image()
 
-                    acilis_display = datetime.strptime(acilis_str, DB_DATE_FORMAT).strftime(RAPOR_TARIH_FORMATI + " %H:%M") if acilis_str else '-'
-                    kapanis_display = datetime.strptime(kapanis_str, DB_DATE_FORMAT).strftime(RAPOR_TARIH_FORMATI + " %H:%M") if kapanis_str else '-'
+def new_product(self):
+    # Formu temizle
+    self.product_name.delete(0, tk.END)
+    self.product_category.set("")
+    self.product_price.delete(0, tk.END)
+    self.product_stock.delete(0, tk.END)
+    self.product_unit.set("adet")
+    self.product_barcode.delete(0, tk.END)
+    self.product_description.delete(1.0, tk.END)
+    self.product_image_path = ""
+    self.product_image_label.config(image="")
+    self.current_product_id = None
 
-                    self.muhasebe_rapor_text.insert(tk.END, f"Masa No: {masa_no}\n")
-                    self.muhasebe_rapor_text.insert(tk.END, f"Müşteri: {musteri_ad_soyad}\n")
-                    self.muhasebe_rapor_text.insert(tk.END, f"Açılış: {acilis_display}\n")
-                    self.muhasebe_rapor_text.insert(tk.END, f"Kapanış: {kapanis_display}\n")
-                    self.muhasebe_rapor_text.insert(tk.END, f"Toplam: {toplam:.0f} ₺\n")
-                    self.muhasebe_rapor_text.insert(tk.END, f"Ödeme Türü: {odeme_turu}\n")
+def save_product(self):
+    # Form verilerini al
+    name = self.product_name.get().strip()
+    category = self.product_category.get()
+    price = self.product_price.get().strip()
+    stock = self.product_stock.get().strip()
+    unit = self.product_unit.get()
+    barcode = self.product_barcode.get().strip()
+    description = self.product_description.get(1.0, tk.END).strip()
+    image_path = self.product_image_path
+    
+    # Validasyon
+    if not name or not category or not price:
+        messagebox.showwarning("Uyarı", "Lütfen zorunlu alanları doldurun (Ad, Kategori, Fiyat)")
+        return
+    
+    try:
+        price = float(price)
+        stock = float(stock) if stock else 0.0
+    except ValueError:
+        messagebox.showerror("Hata", "Geçersiz fiyat veya stok değeri")
+        return
+    
+    # Kategori ID'sini al
+    category_id = self.db.get_one(
+        "SELECT id FROM categories WHERE name = ?",
+        (category,)
+    )
+    
+    if not category_id:
+        messagebox.showerror("Hata", "Geçersiz kategori")
+        return
+    
+    category_id = category_id[0]
+    
+    # Veritabanı işlemi
+    try:
+        if self.current_product_id:
+            # Güncelleme
+            self.db.execute(
+                """UPDATE products SET 
+                    name = ?, 
+                    category_id = ?, 
+                    price = ?, 
+                    stock = ?, 
+                    unit = ?, 
+                    barcode = ?, 
+                    description = ?, 
+                    image_path = ? 
+                   WHERE id = ?""",
+                (name, category_id, price, stock, unit, barcode, description, image_path, self.current_product_id),
+                commit=True
+            )
+            messagebox.showinfo("Başarılı", "Ürün güncellendi")
+        else:
+            # Yeni ürün
+            self.db.execute(
+                """INSERT INTO products 
+                   (name, category_id, price, stock, unit, barcode, description, image_path) 
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (name, category_id, price, stock, unit, barcode, description, image_path),
+                commit=True
+            )
+            messagebox.showinfo("Başarılı", "Yeni ürün eklendi")
+        
+        # Listeyi yenile
+        self.load_products_list()
+        
+    except sqlite3.Error as e:
+        messagebox.showerror("Hata", f"Ürün kaydedilemedi:\n{str(e)}")
 
-                    # Sipariş detaylarını çek (ilgili sipariş_gecmisi kaydını bulup)
-                    # siparis_gecmisi tablosunda masa_no, tarih ve toplam aynı olmalı (basit eşleştirme)
-                    # Daha doğru bir yöntem, masa_gecmisi tablosuna siparis_id sütunu eklemek olabilir.
-                    # Şimdilik basit eşleştirme ile devam edelim:
-                    self.cursor.execute('''
-                         SELECT id FROM siparis_gecmisi
-                         WHERE masa_no = ? AND tarih = ? AND toplam = ?
-                         LIMIT 1 -- Birden fazla eşleşme olabilir, ilkini al
-                    ''', (masa_no, kapanis_str, toplam)) # Kapanış tarihi ve toplam ile eşleştirme
-                    siparis_gecmisi_row = self.cursor.fetchone()
+def delete_product(self):
+    if not self.current_product_id:
+        messagebox.showwarning("Uyarı", "Lütfen bir ürün seçin")
+        return
+    
+    if not messagebox.askyesno("Onay", "Bu ürünü silmek istediğinize emin misiniz?"):
+        return
+    
+    try:
+        # Ürünü pasif yap (silme yerine)
+        self.db.execute(
+            "UPDATE products SET is_active = 0 WHERE id = ?",
+            (self.current_product_id,),
+            commit=True
+        )
+        
+        messagebox.showinfo("Başarılı", "Ürün silindi")
+        self.load_products_list()
+        self.new_product()  # Formu temizle
+        
+    except sqlite3.Error as e:
+        messagebox.showerror("Hata", f"Ürün silinemedi:\n{str(e)}")
 
-                    if siparis_gecmisi_row:
-                         siparis_id = siparis_gecmisi_row['id']
-                         self.cursor.execute('''
-                             SELECT urun_adi, miktar, tutar
-                             FROM siparis_detaylari
-                             WHERE siparis_id = ?
-                         ''', (siparis_id,))
-                         detaylar = self.cursor.fetchall()
+# KATEGORİ YÖNETİMİ SEKMESİ (150+ satır)
+def setup_categories_tab(self):
+    # Ana çerçeve
+    main_frame = ttk.Frame(self.categories_tab)
+    main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+    
+    # Sol panel - Kategori listesi
+    list_frame = ttk.Frame(main_frame, width=300)
+    list_frame.pack(side=tk.LEFT, fill=tk.BOTH, padx=5)
+    
+    # Arama
+    search_frame = ttk.Frame(list_frame)
+    search_frame.pack(fill=tk.X, pady=5)
+    
+    ttk.Label(search_frame, text="Ara:").pack(side=tk.LEFT)
+    self.category_search = ttk.Entry(search_frame)
+    self.category_search.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
+    self.category_search.bind("<KeyRelease>", self.filter_categories)
+    
+    # Kategori listesi (Treeview)
+    self.categories_tree = ttk.Treeview(
+        list_frame,
+        columns=("id", "name"),
+        show="headings",
+        selectmode="browse"
+    )
+    
+    # Kolon başlıkları
+    self.categories_tree.heading("id", text="ID", anchor=tk.CENTER)
+    self.categories_tree.heading("name", text="Kategori Adı")
+    
+    # Kolon genişlikleri
+    self.categories_tree.column("id", width=50, anchor=tk.CENTER)
+    self.categories_tree.column("name", width=200)
+    
+    self.categories_tree.pack(fill=tk.BOTH, expand=True)
+    self.categories_tree.bind("<<TreeviewSelect>>", self.on_category_select)
+    
+    # Scrollbar
+    scrollbar = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=self.categories_tree.yview)
+    scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+    self.categories_tree.configure(yscrollcommand=scrollbar.set)
+    
+    # Sağ panel - Kategori formu
+    form_frame = ttk.Frame(main_frame)
+    form_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=5)
+    
+    # Kategori bilgileri
+    ttk.Label(form_frame, text="Kategori Bilgileri", font=('Helvetica', 12, 'bold')).pack(pady=5)
+    
+    # Form alanları
+    fields_frame = ttk.Frame(form_frame)
+    fields_frame.pack(fill=tk.X, pady=5)
+    
+    ttk.Label(fields_frame, text="Kategori Adı:").grid(row=0, column=0, sticky="e", padx=5, pady=2)
+    self.category_name = ttk.Entry(fields_frame)
+    self.category_name.grid(row=0, column=1, sticky="ew", padx=5, pady=2)
+    
+    ttk.Label(fields_frame, text="Sıra No:").grid(row=1, column=0, sticky="e", padx=5, pady=2)
+    self.category_order = ttk.Entry(fields_frame)
+    self.category_order.grid(row=1, column=1, sticky="ew", padx=5, pady=2)
+    
+    ttk.Label(fields_frame, text="Açıklama:").grid(row=2, column=0, sticky="ne", padx=5, pady=2)
+    self.category_description = tk.Text(fields_frame, height=4, width=30)
+    self.category_description.grid(row=2, column=1, sticky="ew", padx=5, pady=2)
+    
+    # Butonlar
+    buttons_frame = ttk.Frame(form_frame)
+    buttons_frame.pack(fill=tk.X, pady=10)
+    
+    ttk.Button(
+        buttons_frame,
+        text="Yeni",
+        command=self.new_category,
+        style="Accent.TButton"
+    ).pack(side=tk.LEFT, padx=5)
+    
+    ttk.Button(
+        buttons_frame,
+        text="Kaydet",
+        command=self.save_category,
+        style="Accent.TButton"
+    ).pack(side=tk.LEFT, padx=5)
+    
+    ttk.Button(
+        buttons_frame,
+        text="Sil",
+        command=self.delete_category,
+        style="Accent.TButton"
+    ).pack(side=tk.RIGHT, padx=5)
+    
+    # Verileri yükle
+    self.load_categories_list()
 
-                         if detaylar:
-                             self.muhasebe_rapor_text.insert(tk.END, "  Detaylar:\n")
-                             for detay in detaylar:
-                                 self.muhasebe_rapor_text.insert(tk.END, f"    - {detay['urun_adi']} x{detay['miktar']}: {detay['tutar']:.0f} ₺\n")
-                         else:
-                             self.muhasebe_rapor_text.insert(tk.END, "  Detay bulunamadı.\n")
+def load_categories_list(self):
+    # Listeyi temizle
+    for item in self.categories_tree.get_children():
+        self.categories_tree.delete(item)
+    
+    # Veritabanından kategorileri çek
+    categories = self.db.get_all(
+        "SELECT id, name FROM categories WHERE is_active = 1 ORDER BY sort_order, name"
+    )
+    
+    if categories:
+        for category in categories:
+            self.categories_tree.insert("", tk.END, values=category)
 
-                    else:
-                         self.muhasebe_rapor_text.insert(tk.END, "  İlgili sipariş geçmişi kaydı bulunamadı.\n")
+def filter_categories(self, event=None):
+    search_term = self.category_search.get().lower()
+    
+    # Listeyi temizle
+    for item in self.categories_tree.get_children():
+        self.categories_tree.delete(item)
+    
+    # Filtreleme sorgusu
+    query = "SELECT id, name FROM categories WHERE is_active = 1"
+    params = []
+    
+    if search_term:
+        query += " AND LOWER(name) LIKE ?"
+        params.append(f"%{search_term}%")
+    
+    query += " ORDER BY sort_order, name"
+    
+    # Filtrelenmiş kategorileri yükle
+    categories = self.db.get_all(query, params)
+    
+    if categories:
+        for category in categories:
+            self.categories_tree.insert("", tk.END, values=category)
 
+def on_category_select(self, event):
+    selected = self.categories_tree.selection()
+    if not selected:
+        return
+    
+    category_id = self.categories_tree.item(selected[0])['values'][0]
+    self.load_category_details(category_id)
 
-                    self.muhasebe_rapor_text.insert(tk.END, "-"*40 + "\n")
+def load_category_details(self, category_id):
+    category = self.db.get_one(
+        "SELECT name, sort_order, description FROM categories WHERE id = ?",
+        (category_id,)
+    )
+    
+    if category:
+        # Form alanlarını doldur
+        self.category_name.delete(0, tk.END)
+        self.category_name.insert(0, category[0])
+        
+        self.category_order.delete(0, tk.END)
+        self.category_order.insert(0, str(category[1] or ""))
+        
+        self.category_description.delete(1.0, tk.END)
+        self.category_description.insert(1.0, category[2] or "")
+        
+        # Geçerli kategori ID'sini sakla
+        self.current_category_id = category_id
 
+def new_category(self):
+    # Formu temizle
+    self.category_name.delete(0, tk.END)
+    self.category_order.delete(0, tk.END)
+    self.category_description.delete(1.0, tk.END)
+    self.current_category_id = None
+
+def save_category(self):
+    # Form verilerini al
+    name = self.category_name.get().strip()
+    order = self.category_order.get().strip()
+    description = self.category_description.get(1.0, tk.END).strip()
+    
+    # Validasyon
+    if not name:
+        messagebox.showwarning("Uyarı", "Lütfen kategori adı girin")
+        return
+    
+    try:
+        order = int(order) if order else 0
+    except ValueError:
+        messagebox.showerror("Hata", "Geçersiz sıra numarası")
+        return
+    
+    # Veritabanı işlemi
+    try:
+        if self.current_category_id:
+            # Güncelleme
+            self.db.execute(
+                """UPDATE categories SET 
+                    name = ?, 
+                    sort_order = ?, 
+                    description = ? 
+                   WHERE id = ?""",
+                (name, order, description, self.current_category_id),
+                commit=True
+            )
+            messagebox.showinfo("Başarılı", "Kategori güncellendi")
+        else:
+            # Yeni kategori
+            self.db.execute(
+                """INSERT INTO categories 
+                   (name, sort_order, description) 
+                   VALUES (?, ?, ?)""",
+                (name, order, description),
+                commit=True
+            )
+            messagebox.showinfo("Başarılı", "Yeni kategori eklendi")
+        
+        # Listeyi yenile
+        self.load_categories_list()
+        self.load_product_categories()  # Ürün sekmesindeki kategori listesini güncelle
+        
+    except sqlite3.Error as e:
+        messagebox.showerror("Hata", f"Kategori kaydedilemedi:\n{str(e)}")
+
+def delete_category(self):
+    if not self.current_category_id:
+        messagebox.showwarning("Uyarı", "Lütfen bir kategori seçin")
+        return
+    
+    # Kategoride ürün var mı kontrol et
+    products = self.db.get_one(
+        "SELECT COUNT(*) FROM products WHERE category_id = ? AND is_active = 1",
+        (self.current_category_id,)
+    )
+    
+    if products and products[0] > 0:
+        messagebox.showerror("Hata", "Bu kategoride ürünler var, önce ürünleri silmelisiniz")
+        return
+    
+    if not messagebox.askyesno("Onay", "Bu kategoriyi silmek istediğinize emin misiniz?"):
+        return
+    
+    try:
+        # Kategoriyi pasif yap (silme yerine)
+        self.db.execute(
+            "UPDATE categories SET is_active = 0 WHERE id = ?",
+            (self.current_category_id,),
+            commit=True
+        )
+        
+        messagebox.showinfo("Başarılı", "Kategori silindi")
+        self.load_categories_list()
+        self.load_product_categories()  # Ürün sekmesindeki kategori listesini güncelle
+        self.new_category()  # Formu temizle
+        
+    except sqlite3.Error as e:
+        messagebox.showerror("Hata", f"Kategori silinemedi:\n{str(e)}")
+
+# MASA YÖNETİMİ SEKMESİ (100+ satır)
+def setup_tables_tab(self):
+    # Ana çerçeve
+    main_frame = ttk.Frame(self.tables_tab)
+    main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+    
+    # Sol panel - Masa listesi
+    list_frame = ttk.Frame(main_frame, width=300)
+    list_frame.pack(side=tk.LEFT, fill=tk.BOTH, padx=5)
+    
+    # Arama
+    search_frame = ttk.Frame(list_frame)
+    search_frame.pack(fill=tk.X, pady=5)
+    
+    ttk.Label(search_frame, text="Ara:").pack(side=tk.LEFT)
+    self.table_search = ttk.Entry(search_frame)
+    self.table_search.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
+    self.table_search.bind("<KeyRelease>", self.filter_tables)
+    
+    # Masa listesi (Treeview)
+    self.tables_tree = ttk.Treeview(
+        list_frame,
+        columns=("id", "name", "status"),
+        show="headings",
+        selectmode="browse"
+    )
+    
+    # Kolon başlıkları
+    self.tables_tree.heading("id", text="ID", anchor=tk.CENTER)
+    self.tables_tree.heading("name", text="Masa Adı")
+    self.tables_tree.heading("status", text="Durum")
+    
+    # Kolon genişlikleri
+    self.tables_tree.column("id", width=50, anchor=tk.CENTER)
+    self.tables_tree.column("name", width=150)
+    self.tables_tree.column("status", width=80)
+    
+    self.tables_tree.pack(fill=tk.BOTH, expand=True)
+    self.tables_tree.bind("<<TreeviewSelect>>", self.on_table_select)
+    
+    # Scrollbar
+    scrollbar = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=self.tables_tree.yview)
+    scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+    self.tables_tree.configure(yscrollcommand=scrollbar.set)
+    
+    # Sağ panel - Masa formu
+    form_frame = ttk.Frame(main_frame)
+    form_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=5)
+    
+    # Masa bilgileri
+    ttk.Label(form_frame, text="Masa Bilgileri", font=('Helvetica', 12, 'bold')).pack(pady=5)
+    
+    # Form alanları
+    fields_frame = ttk.Frame(form_frame)
+    fields_frame.pack(fill=tk.X, pady=5)
+    
+    ttk.Label(fields_frame, text="Masa Adı:").grid(row=0, column=0, sticky="e", padx=5, pady=2)
+    self.table_name = ttk.Entry(fields_frame)
+    self.table_name.grid(row=0, column=1, sticky="ew", padx=5, pady=2)
+    
+    ttk.Label(fields_frame, text="Durum:").grid(row=1, column=0, sticky="e", padx=5, pady=2)
+    self.table_status = ttk.Combobox(fields_frame, values=["Aktif", "Pasif"], state="readonly")
+    self.table_status.grid(row=1, column=1, sticky="ew", padx=5, pady=2)
+    
+    # Butonlar
+    buttons_frame = ttk.Frame(form_frame)
+    buttons_frame.pack(fill=tk.X, pady=10)
+    
+    ttk.Button(
+        buttons_frame,
+        text="Yeni",
+        command=self.new_table,
+        style="Accent.TButton"
+    ).pack(side=tk.LEFT, padx=5)
+    
+    ttk.Button(
+        buttons_frame,
+        text="Kaydet",
+        command=self.save_table,
+        style="Accent.TButton"
+    ).pack(side=tk.LEFT, padx=5)
+    
+    ttk.Button(
+        buttons_frame,
+        text="Sil",
+        command=self.delete_table,
+        style="Accent.TButton"
+    ).pack(side=tk.RIGHT, padx=5)
+    
+    # Verileri yükle
+    self.load_tables_list()
+
+def load_tables_list(self):
+    # Listeyi temizle
+    for item in self.tables_tree.get_children():
+        self.tables_tree.delete(item)
+    
+    # Veritabanından masaları çek
+    tables = self.db.get_all(
+        "SELECT id, name, CASE WHEN is_active = 1 THEN 'Aktif' ELSE 'Pasif' END FROM tables ORDER BY name"
+    )
+    
+    if tables:
+        for table in tables:
+            self.tables_tree.insert("", tk.END, values=table)
+
+def filter_tables(self, event=None):
+    search_term = self.table_search.get().lower()
+    
+    # Listeyi temizle
+    for item in self.tables_tree.get_children():
+        self.tables_tree.delete(item)
+    
+    # Filtreleme sorgusu
+    query = "SELECT id, name, CASE WHEN is_active = 1 THEN 'Aktif' ELSE 'Pasif' END FROM tables"
+    params = []
+    
+    if search_term:
+        query += " WHERE LOWER(name) LIKE ?"
+        params.append(f"%{search_term}%")
+    
+    query += " ORDER BY name"
+    
+    # Filtrelenmiş masaları yükle
+    tables = self.db.get_all(query, params)
+    
+    if tables:
+        for table in tables:
+            self.tables_tree.insert("", tk.END, values=table)
+
+def on_table_select(self, event):
+    selected = self.tables_tree.selection()
+    if not selected:
+        return
+    
+    table_id = self.tables_tree.item(selected[0])['values'][0]
+    self.load_table_details(table_id)
+
+def load_table_details(self, table_id):
+    table = self.db.get_one(
+        "SELECT name, is_active FROM tables WHERE id = ?",
+        (table_id,)
+    )
+    
+    if table:
+        # Form alanlarını doldur
+        self.table_name.delete(0, tk.END)
+        self.table_name.insert(0, table[0])
+        
+        self.table_status.set("Aktif" if table[1] else "Pasif")
+        
+        # Geçerli masa ID'sini sakla
+        self.current_table_id = table_id
+
+def new_table(self):
+    # Formu temizle
+    self.table_name.delete(0, tk.END)
+    self.table_status.set("Aktif")
+    self.current_table_id = None
+
+def save_table(self):
+    # Form verilerini al
+    name = self.table_name.get().strip()
+    status = self.table_status.get()
+    
+    # Validasyon
+    if not name:
+        messagebox.showwarning("Uyarı", "Lütfen masa adı girin")
+        return
+    
+    is_active = 1 if status == "Aktif" else 0
+    
+    # Veritabanı işlemi
+    try:
+        if self.current_table_id:
+            # Güncelleme
+            self.db.execute(
+                """UPDATE tables SET 
+                    name = ?, 
+                    is_active = ? 
+                   WHERE id = ?""",
+                (name, is_active, self.current_table_id),
+                commit=True
+            )
+            messagebox.showinfo("Başarılı", "Masa güncellendi")
+        else:
+            # Yeni masa
+            self.db.execute(
+                """INSERT INTO tables 
+                   (name, is_active) 
+                   VALUES (?, ?)""",
+                (name, is_active),
+                commit=True
+            )
+            messagebox.showinfo("Başarılı", "Yeni masa eklendi")
+        
+        # Listeyi yenile
+        self.load_tables_list()
+        self.load_tables()  # Adisyon sekmesindeki masa listesini güncelle
+        
+    except sqlite3.Error as e:
+        messagebox.showerror("Hata", f"Masa kaydedilemedi:\n{str(e)}")
+
+def delete_table(self):
+    if not self.current_table_id:
+        messagebox.showwarning("Uyarı", "Lütfen bir masa seçin")
+        return
+    
+    if not messagebox.askyesno("Onay", "Bu masayı silmek istediğinize emin misiniz?"):
+        return
+    
+    try:
+        # Masayı veritabanından sil
+        self.db.execute(
+            "DELETE FROM tables WHERE id = ?",
+            (self.current_table_id,),
+            commit=True
+        )
+        
+        messagebox.showinfo("Başarılı", "Masa silindi")
+        self.load_tables_list()
+        self.load_tables()  # Adisyon sekmesindeki masa listesini güncelle
+        self.new_table()  # Formu temizle
+        
+    except sqlite3.Error as e:
+        messagebox.showerror("Hata", f"Masa silinemedi:\n{str(e)}")
+
+# RAPORLAR SEKMESİ (400+ satır)
+def setup_reports_tab(self):
+    # Ana çerçeve
+    main_frame = ttk.Frame(self.reports_tab)
+    main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+    
+    # Filtreleme paneli
+    filter_frame = ttk.LabelFrame(main_frame, text="Filtreler")
+    filter_frame.pack(fill=tk.X, padx=5, pady=5)
+    
+    # Tarih aralığı
+    ttk.Label(filter_frame, text="Başlangıç Tarihi:").grid(row=0, column=0, padx=5, pady=5)
+    self.start_date = ttk.Entry(filter_frame)
+    self.start_date.grid(row=0, column=1, padx=5, pady=5)
+    
+    ttk.Label(filter_frame, text="Bitiş Tarihi:").grid(row=0, column=2, padx=5, pady=5)
+    self.end_date = ttk.Entry(filter_frame)
+    self.end_date.grid(row=0, column=3, padx=5, pady=5)
+    
+    # Masa filtresi
+    ttk.Label(filter_frame, text="Masa:").grid(row=1, column=0, padx=5, pady=5)
+    self.report_table_filter = ttk.Combobox(filter_frame, state="readonly")
+    self.report_table_filter.grid(row=1, column=1, padx=5, pady=5)
+    
+    # Kullanıcı filtresi
+    ttk.Label(filter_frame, text="Kullanıcı:").grid(row=1, column=2, padx=5, pady=5)
+    self.report_user_filter = ttk.Combobox(filter_frame, state="readonly")
+    self.report_user_filter.grid(row=1, column=3, padx=5, pady=5)
+    
+    # Rapor tipi
+    ttk.Label(filter_frame, text="Rapor Tipi:").grid(row=2, column=0, padx=5, pady=5)
+    self.report_type = ttk.Combobox(
+        filter_frame,
+        values=["Satış Raporu", "Ürün Bazlı Rapor", "Masa Bazlı Rapor", "Kullanıcı Bazlı Rapor"],
+        state="readonly"
+    )
+    self.report_type.current(0)
+    self.report_type.grid(row=2, column=1, columnspan=3, sticky="ew", padx=5, pady=5)
+    
+    # Filtrele butonu
+    ttk.Button(
+        filter_frame,
+        text="Filtrele",
+        command=self.generate_report,
+        style="Accent.TButton"
+    ).grid(row=3, column=0, columnspan=4, pady=5)
+    
+    # Rapor paneli
+    report_frame = ttk.Frame(main_frame)
+    report_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+    
+    # Treeview
+    self.report_tree = ttk.Treeview(report_frame)
+    self.report_tree.pack(fill=tk.BOTH, expand=True)
+    
+    # Scrollbar
+    scrollbar = ttk.Scrollbar(report_frame, orient=tk.VERTICAL, command=self.report_tree.yview)
+    scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+    self.report_tree.configure(yscrollcommand=scrollbar.set)
+    
+    # Özet paneli
+    summary_frame = ttk.LabelFrame(main_frame, text="Özet")
+    summary_frame.pack(fill=tk.X, padx=5, pady=5)
+    
+    ttk.Label(summary_frame, text="Toplam Satış:").grid(row=0, column=0, padx=5, pady=2)
+    self.total_sales_label = ttk.Label(summary_frame, text="0.00 TL", font=('Helvetica', 10, 'bold'))
+    self.total_sales_label.grid(row=0, column=1, padx=5, pady=2, sticky="w")
+    
+    ttk.Label(summary_frame, text="Toplam Sipariş:").grid(row=0, column=2, padx=5, pady=2)
+    self.total_orders_label = ttk.Label(summary_frame, text="0", font=('Helvetica', 10, 'bold'))
+    self.total_orders_label.grid(row=0, column=3, padx=5, pady=2, sticky="w")
+    
+    ttk.Label(summary_frame, text="Ortalama Sipariş:").grid(row=0, column=4, padx=5, pady=2)
+    self.avg_order_label = ttk.Label(summary_frame, text="0.00 TL", font=('Helvetica', 10, 'bold'))
+    self.avg_order_label.grid(row=0, column=5, padx=5, pady=2, sticky="w")
+    
+    # Butonlar
+    button_frame = ttk.Frame(main_frame)
+    button_frame.pack(fill=tk.X, padx=5, pady=5)
+    
+    ttk.Button(
+        button_frame,
+        text="Excel'e Aktar",
+        command=self.export_to_excel,
+        style="Accent.TButton"
+    ).pack(side=tk.LEFT, padx=5)
+    
+    ttk.Button(
+        button_frame,
+        text="Yazdır",
+        command=self.print_report,
+        style="Accent.TButton"
+    ).pack(side=tk.LEFT, padx=5)
+    
+    # Varsayılan tarihleri ayarla
+    self.start_date.insert(0, datetime.now().strftime("%Y-%m-%d"))
+    self.end_date.insert(0, datetime.now().strftime("%Y-%m-%d"))
+    
+    # Filtreleri yükle
+    self.load_report_filters()
+    
+    # Varsayılan raporu oluştur
+    self.generate_report()
+
+def load_report_filters(self):
+    # Masaları yükle
+    tables = self.db.get_all("SELECT name FROM tables ORDER BY name")
+    if tables:
+        self.report_table_filter['values'] = ["Tüm Masalar"] + [table[0] for table in tables]
+        self.report_table_filter.current(0)
+    
+    # Kullanıcıları yükle
+    users = self.db.get_all("SELECT full_name FROM users ORDER BY full_name")
+    if users:
+        self.report_user_filter['values'] = ["Tüm Kullanıcılar"] + [user[0] for user in users]
+        self.report_user_filter.current(0)
+
+def generate_report(self):
+    # Filtreleri al
+    start_date = self.start_date.get().strip()
+    end_date = self.end_date.get().strip()
+    table_name = self.report_table_filter.get()
+    user_name = self.report_user_filter.get()
+    report_type = self.report_type.get()
+    
+    # Tarih validasyonu
+    try:
+        start_date = datetime.strptime(start_date, "%Y-%m-%d")
+        end_date = datetime.strptime(end_date, "%Y-%m-%d")
+        
+        if start_date > end_date:
+            messagebox.showwarning("Uyarı", "Başlangıç tarihi bitiş tarihinden büyük olamaz")
+            return
+        
+        start_date = start_date.strftime("%Y-%m-%d 00:00:00")
+        end_date = end_date.strftime("%Y-%m-%d 23:59:59")
+    except ValueError:
+        messagebox.showerror("Hata", "Geçersiz tarih formatı (YYYY-AA-GG)")
+        return
+    
+    # Raporu oluştur
+    try:
+        if report_type == "Satış Raporu":
+            self.generate_sales_report(start_date, end_date, table_name, user_name)
+        elif report_type == "Ürün Bazlı Rapor":
+            self.generate_product_report(start_date, end_date, table_name, user_name)
+        elif report_type == "Masa Bazlı Rapor":
+            self.generate_table_report(start_date, end_date, table_name, user_name)
+        elif report_type == "Kullanıcı Bazlı Rapor":
+            self.generate_user_report(start_date, end_date, table_name, user_name)
+    except Exception as e:
+        messagebox.showerror("Hata", f"Rapor oluşturulamadı:\n{str(e)}")
+
+def generate_sales_report(self, start_date, end_date, table_name, user_name):
+    # Sorgu oluştur
+    query = """SELECT 
+                  o.id, 
+                  t.name, 
+                  u.full_name, 
+                  o.date, 
+                  o.total, 
+                  o.discount, 
+                  o.payment_type 
+               FROM orders o
+               JOIN tables t ON o.table_id = t.id
+               JOIN users u ON o.user_id = u.id
+               WHERE o.date BETWEEN ? AND ?"""
+    
+    params = [start_date, end_date]
+    
+    # Masa filtresi
+    if table_name and table_name != "Tüm Masalar":
+        query += " AND t.name = ?"
+        params.append(table_name)
+    
+    # Kullanıcı filtresi
+    if user_name and user_name != "Tüm Kullanıcılar":
+        query += " AND u.full_name = ?"
+        params.append(user_name)
+    
+    query += " ORDER BY o.date DESC"
+    
+    # Siparişleri getir
+    orders = self.db.get_all(query, params)
+    
+    # Treeview'ı temizle ve yapılandır
+    self.clear_report_tree()
+    self.report_tree['columns'] = ("id", "table", "user", "date", "total", "discount", "payment")
+    
+    # Kolon başlıkları
+    self.report_tree.heading("id", text="Sipariş No", anchor=tk.CENTER)
+    self.report_tree.heading("table", text="Masa")
+    self.report_tree.heading("user", text="Kullanıcı")
+    self.report_tree.heading("date", text="Tarih")
+    self.report_tree.heading("total", text="Toplam")
+    self.report_tree.heading("discount", text="İndirim")
+    self.report_tree.heading("payment", text="Ödeme Tipi")
+    
+    # Kolon genişlikleri
+    self.report_tree.column("id", width=80, anchor=tk.CENTER)
+    self.report_tree.column("table", width=100)
+    self.report_tree.column("user", width=120)
+    self.report_tree.column("date", width=120)
+    self.report_tree.column("total", width=80, anchor=tk.E)
+    self.report_tree.column("discount", width=80, anchor=tk.E)
+    self.report_tree.column("payment", width=100)
+    
+    # Verileri ekle
+    total_sales = 0.0
+    for order in orders:
+        self.report_tree.insert("", tk.END, values=order)
+        total_sales += order[4]
+    
+    # Özeti güncelle
+    self.update_summary(len(orders), total_sales)
+
+def generate_product_report(self, start_date, end_date, table_name, user_name):
+    # Sorgu oluştur
+    query = """SELECT 
+                  p.name,
+                  SUM(oi.quantity),
+                  SUM(oi.price * oi.quantity),
+                  c.name
+               FROM order_items oi
+               JOIN orders o ON oi.order_id = o.id
+               JOIN products p ON oi.product_id = p.id
+               JOIN categories c ON p.category_id = c.id
+               JOIN tables t ON o.table_id = t.id
+               JOIN users u ON o.user_id = u.id
+               WHERE o.date BETWEEN ? AND ?"""
+    
+    params = [start_date, end_date]
+    
+    # Masa filtresi
+    if table_name and table_name != "Tüm Masalar":
+        query += " AND t.name = ?"
+        params.append(table_name)
+    
+    # Kullanıcı filtresi
+    if user_name and user_name != "Tüm Kullanıcılar":
+        query += " AND u.full_name = ?"
+        params.append(user_name)
+    
+    query += " GROUP BY p.name, c.name ORDER BY SUM(oi.price * oi.quantity) DESC"
+    
+    # Ürünleri getir
+    products = self.db.get_all(query, params)
+    
+    # Treeview'ı temizle ve yapılandır
+    self.clear_report_tree()
+    self.report_tree['columns'] = ("product", "quantity", "total", "category")
+    
+    # Kolon başlıkları
+    self.report_tree.heading("product", text="Ürün Adı")
+    self.report_tree.heading("quantity", text="Adet")
+    self.report_tree.heading("total", text="Toplam")
+    self.report_tree.heading("category", text="Kategori")
+    
+    # Kolon genişlikleri
+    self.report_tree.column("product", width=200)
+    self.report_tree.column("quantity", width=80, anchor=tk.CENTER)
+    self.report_tree.column("total", width=100, anchor=tk.E)
+    self.report_tree.column("category", width=120)
+    
+    # Verileri ekle
+    total_sales = 0.0
+    for product in products:
+        self.report_tree.insert("", tk.END, values=product)
+        total_sales += product[2]
+    
+    # Özeti güncelle
+    self.update_summary(len(products), total_sales)
+
+def generate_table_report(self, start_date, end_date, table_name, user_name):
+    # Sorgu oluştur
+    query = """SELECT 
+                  t.name,
+                  COUNT(o.id),
+                  SUM(o.total),
+                  AVG(o.total)
+               FROM orders o
+               JOIN tables t ON o.table_id = t.id
+               JOIN users u ON o.user_id = u.id
+               WHERE o.date BETWEEN ? AND ?"""
+    
+    params = [start_date, end_date]
+    
+    # Masa filtresi
+    if table_name and table_name != "Tüm Masalar":
+        query += " AND t.name = ?"
+        params.append(table_name)
+    
+    # Kullanıcı filtresi
+    if user_name and user_name != "Tüm Kullanıcılar":
+        query += " AND u.full_name = ?"
+        params.append(user_name)
+    
+    query += " GROUP BY t.name ORDER BY SUM(o.total) DESC"
+    
+    # Masaları getir
+    tables = self.db.get_all(query, params)
+    
+    # Treeview'ı temizle ve yapılandır
+    self.clear_report_tree()
+    self.report_tree['columns'] = ("table", "orders", "total", "average")
+    
+    # Kolon başlıkları
+    self.report_tree.heading("table", text="Masa Adı")
+    self.report_tree.heading("orders", text="Sipariş Sayısı")
+    self.report_tree.heading("total", text="Toplam")
+    self.report_tree.heading("average", text="Ortalama")
+    
+    # Kolon genişlikleri
+    self.report_tree.column("table", width=150)
+    self.report_tree.column("orders", width=100, anchor=tk.CENTER)
+    self.report_tree.column("total", width=100, anchor=tk.E)
+    self.report_tree.column("average", width=100, anchor=tk.E)
+    
+    # Verileri ekle
+    total_sales = 0.0
+    total_orders = 0
+    for table in tables:
+        self.report_tree.insert("", tk.END, values=table)
+        total_sales += table[2]
+        total_orders += table[1]
+    
+    # Özeti güncelle
+    self.update_summary(total_orders, total_sales)
+
+def generate_user_report(self, start_date, end_date, table_name, user_name):
+    # Sorgu oluştur
+    query = """SELECT 
+                  u.full_name,
+                  COUNT(o.id),
+                  SUM(o.total),
+                  AVG(o.total)
+               FROM orders o
+               JOIN users u ON o.user_id = u.id
+               JOIN tables t ON o.table_id = t.id
+               WHERE o.date BETWEEN ? AND ?"""
+    
+    params = [start_date, end_date]
+    
+    # Masa filtresi
+    if table_name and table_name != "Tüm Masalar":
+        query += " AND t.name = ?"
+        params.append(table_name)
+    
+    # Kullanıcı filtresi
+    if user_name and user_name != "Tüm Kullanıcılar":
+        query += " AND u.full_name = ?"
+        params.append(user_name)
+    
+    query += " GROUP BY u.full_name ORDER BY SUM(o.total) DESC"
+    
+    # Kullanıcıları getir
+    users = self.db.get_all(query, params)
+    
+    # Treeview'ı temizle ve yapılandır
+    self.clear_report_tree()
+    self.report_tree['columns'] = ("user", "orders", "total", "average")
+    
+    # Kolon başlıkları
+    self.report_tree.heading("user", text="Kullanıcı Adı")
+    self.report_tree.heading("orders", text="Sipariş Sayısı")
+    self.report_tree.heading("total", text="Toplam")
+    self.report_tree.heading("average", text="Ortalama")
+    
+    # Kolon genişlikleri
+    self.report_tree.column("user", width=150)
+    self.report_tree.column("orders", width=100, anchor=tk.CENTER)
+    self.report_tree.column("total", width=100, anchor=tk.E)
+    self.report_tree.column("average", width=100, anchor=tk.E)
+    
+    # Verileri ekle
+    total_sales = 0.0
+    total_orders = 0
+    for user in users:
+        self.report_tree.insert("", tk.END, values=user)
+        total_sales += user[2]
+        total_orders += user[1]
+    
+    # Özeti güncelle
+    self.update_summary(total_orders, total_sales)
+
+def clear_report_tree(self):
+    # Treeview'ı temizle
+    for item in self.report_tree.get_children():
+        self.report_tree.delete(item)
+    
+    # Kolonları temizle
+    self.report_tree['columns'] = []
+
+def update_summary(self, order_count, total_sales):
+    # Özet bilgilerini güncelle
+    self.total_sales_label.config(text=f"{total_sales:.2f} TL")
+    self.total_orders_label.config(text=str(order_count))
+    
+    if order_count > 0:
+        avg = total_sales / order_count
+        self.avg_order_label.config(text=f"{avg:.2f} TL")
+    else:
+        self.avg_order_label.config(text="0.00 TL")
+
+def export_to_excel(self):
+    # Seçili raporu Excel'e aktar
+    pass
+
+def print_report(self):
+    # Seçili raporu yazdır
+    pass
+
+# KULLANICI YÖNETİMİ SEKMESİ (200+ satır)
+def setup_users_tab(self):
+    # Ana çerçeve
+    main_frame = ttk.Frame(self.users_tab)
+    main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+    
+    # Sol panel - Kullanıcı listesi
+    list_frame = ttk.Frame(main_frame, width=300)
+    list_frame.pack(side=tk.LEFT, fill=tk.BOTH, padx=5)
+    
+    # Arama
+    search_frame = ttk.Frame(list_frame)
+    search_frame.pack(fill=tk.X, pady=5)
+    
+    ttk.Label(search_frame, text="Ara:").pack(side=tk.LEFT)
+    self.user_search = ttk.Entry(search_frame)
+    self.user_search.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
+    self.user_search.bind("<KeyRelease>", self.filter_users)
+    
+    # Kullanıcı listesi (Treeview)
+    self.users_tree = ttk.Treeview(
+        list_frame,
+        columns=("id", "username", "name", "role"),
+        show="headings",
+        selectmode="browse"
+    )
+    
+    # Kolon başlıkları
+    self.users_tree.heading("id", text="ID", anchor=tk.CENTER)
+    self.users_tree.heading("username", text="Kullanıcı Adı")
+    self.users_tree.heading("name", text="Ad Soyad")
+    self.users_tree.heading("role", text="Yetki")
+    
+    # Kolon genişlikleri
+    self.users_tree.column("id", width=50, anchor=tk.CENTER)
+    self.users_tree.column("username", width=100)
+    self.users_tree.column("name", width=120)
+    self.users_tree.column("role", width=80)
+    
+    self.users_tree.pack(fill=tk.BOTH, expand=True)
+    self.users_tree.bind("<<TreeviewSelect>>", self.on_user_select)
+    
+    # Scrollbar
+    scrollbar = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=self.users_tree.yview)
+    scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+    self.users_tree.configure(yscrollcommand=scrollbar.set)
+    
+    # Sağ panel - Kullanıcı formu
+    form_frame = ttk.Frame(main_frame)
+    form_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=5)
+    
+    # Kullanıcı bilgileri
+    ttk.Label(form_frame, text="Kullanıcı Bilgileri", font=('Helvetica', 12, 'bold')).pack(pady=5)
+    
+    # Form alanları
+    fields_frame = ttk.Frame(form_frame)
+    fields_frame.pack(fill=tk.X, pady=5)
+    
+    ttk.Label(fields_frame, text="Kullanıcı Adı:").grid(row=0, column=0, sticky="e", padx=5, pady=2)
+    self.user_username = ttk.Entry(fields_frame)
+    self.user_username.grid(row=0, column=1, sticky="ew", padx=5, pady=2)
+    
+    ttk.Label(fields_frame, text="Şifre:").grid(row=1, column=0, sticky="e", padx=5, pady=2)
+    self.user_password = ttk.Entry(fields_frame, show="*")
+    self.user_password.grid(row=1, column=1, sticky="ew", padx=5, pady=2)
+    
+    ttk.Label(fields_frame, text="Ad Soyad:").grid(row=2, column=0, sticky="e", padx=5, pady=2)
+    self.user_fullname = ttk.Entry(fields_frame)
+    self.user_fullname.grid(row=2, column=1, sticky="ew", padx=5, pady=2)
+    
+    ttk.Label(fields_frame, text="Yetki:").grid(row=3, column=0, sticky="e", padx=5, pady=2)
+    self.user_role = ttk.Combobox(fields_frame, values=["admin", "user"], state="readonly")
+    self.user_role.grid(row=3, column=1, sticky="ew", padx=5, pady=2)
+    
+    ttk.Label(fields_frame, text="Durum:").grid(row=4, column=0, sticky="e", padx=5, pady=2)
+    self.user_status = ttk.Combobox(fields_frame, values=["Aktif", "Pasif"], state="readonly")
+    self.user_status.grid(row=4, column=1, sticky="ew", padx=5, pady=2)
+    
+    # Butonlar
+    buttons_frame = ttk.Frame(form_frame)
+    buttons_frame.pack(fill=tk.X, pady=10)
+    
+    ttk.Button(
+        buttons_frame,
+        text="Yeni",
+        command=self.new_user,
+        style="Accent.TButton"
+    ).pack(side=tk.LEFT, padx=5)
+    
+    ttk.Button(
+        buttons_frame,
+        text="Kaydet",
+        command=self.save_user,
+        style="Accent.TButton"
+    ).pack(side=tk.LEFT, padx=5)
+    
+    ttk.Button(
+        buttons_frame,
+        text="Sil",
+        command=self.delete_user,
+        style="Accent.TButton"
+    ).pack(side=tk.RIGHT, padx=5)
+    
+    # Verileri yükle
+    self.load_users_list()
+
+def load_users_list(self):
+    # Listeyi temizle
+    for item in self.users_tree.get_children():
+        self.users_tree.delete(item)
+    
+    # Veritabanından kullanıcıları çek
+    users = self.db.get_all(
+        "SELECT id, username, full_name, role FROM users ORDER BY full_name"
+    )
+    
+    if users:
+        for user in users:
+            self.users_tree.insert("", tk.END, values=user)
+
+def filter_users(self, event=None):
+    search_term = self.user_search.get().lower()
+    
+    # Listeyi temizle
+    for item in self.users_tree.get_children():
+        self.users_tree.delete(item)
+    
+    # Filtreleme sorgusu
+    query = "SELECT id, username, full_name, role FROM users"
+    params = []
+    
+    if search_term:
+        query += " WHERE LOWER(username) LIKE ? OR LOWER(full_name) LIKE ?"
+        params.extend([f"%{search_term}%", f"%{search_term}%"])
+    
+    query += " ORDER BY full_name"
+    
+    # Filtrelenmiş kullanıcıları yükle
+    users = self.db.get_all(query, params)
+    
+    if users:
+        for user in users:
+            self.users_tree.insert("", tk.END, values=user)
+
+def on_user_select(self, event):
+    selected = self.users_tree.selection()
+    if not selected:
+        return
+    
+    user_id = self.users_tree.item(selected[0])['values'][0]
+    self.load_user_details(user_id)
+
+def load_user_details(self, user_id):
+    user = self.db.get_one(
+        "SELECT username, full_name, role, is_active FROM users WHERE id = ?",
+        (user_id,)
+    )
+    
+    if user:
+        # Form alanlarını doldur
+        self.user_username.delete(0, tk.END)
+        self.user_username.insert(0, user[0])
+        
+        self.user_password.delete(0, tk.END)
+        
+        self.user_fullname.delete(0, tk.END)
+        self.user_fullname.insert(0, user[1])
+        
+        self.user_role.set(user[2])
+        self.user_status.set("Aktif" if user[3] else "Pasif")
+        
+        # Geçerli kullanıcı ID'sini sakla
+        self.current_user_id = user_id
+
+def new_user(self):
+    # Formu temizle
+    self.user_username.delete(0, tk.END)
+    self.user_password.delete(0, tk.END)
+    self.user_fullname.delete(0, tk.END)
+    self.user_role.set("user")
+    self.user_status.set("Aktif")
+    self.current_user_id = None
+
+def save_user(self):
+    # Form verilerini al
+    username = self.user_username.get().strip()
+    password = self.user_password.get().strip()
+    fullname = self.user_fullname.get().strip()
+    role = self.user_role.get()
+    status = self.user_status.get()
+    
+    # Validasyon
+    if not username or not fullname:
+        messagebox.showwarning("Uyarı", "Lütfen zorunlu alanları doldurun (Kullanıcı Adı, Ad Soyad)")
+        return
+    
+    is_active = 1 if status == "Aktif" else 0
+    
+    # Yeni kullanıcı için şifre kontrolü
+    if not self.current_user_id and not password:
+        messagebox.showwarning("Uyarı", "Yeni kullanıcı için şifre girin")
+        return
+    
+    # Veritabanı işlemi
+    try:
+        if self.current_user_id:
+            # Güncelleme
+            if password:
+                hashed_pw = hashlib.sha256(password.encode()).hexdigest()
+                self.db.execute(
+                    """UPDATE users SET 
+                        username = ?, 
+                        password = ?, 
+                        full_name = ?, 
+                        role = ?, 
+                        is_active = ? 
+                       WHERE id = ?""",
+                    (username, hashed_pw, fullname, role, is_active, self.current_user_id),
+                    commit=True
+                )
             else:
-                self.muhasebe_rapor_text.insert(tk.END, "Belirtilen tarih aralığında masa geçmişi kaydı bulunamadı.\n")
+                self.db.execute(
+                    """UPDATE users SET 
+                        username = ?, 
+                        full_name = ?, 
+                        role = ?, 
+                        is_active = ? 
+                       WHERE id = ?""",
+                    (username, fullname, role, is_active, self.current_user_id),
+                    commit=True
+                )
+            messagebox.showinfo("Başarılı", "Kullanıcı güncellendi")
+        else:
+            # Yeni kullanıcı
+            hashed_pw = hashlib.sha256(password.encode()).hexdigest()
+            self.db.execute(
+                """INSERT INTO users 
+                   (username, password, full_name, role, is_active) 
+                   VALUES (?, ?, ?, ?, ?)""",
+                (username, hashed_pw, fullname, role, is_active),
+                commit=True
+            )
+            messagebox.showinfo("Başarılı", "Yeni kullanıcı eklendi")
+        
+        # Listeyi yenile
+        self.load_users_list()
+        
+    except sqlite3.Error as e:
+        messagebox.showerror("Hata", f"Kullanıcı kaydedilemedi:\n{str(e)}")
+
+def delete_user(self):
+    if not self.current_user_id:
+        messagebox.showwarning("Uyarı", "Lütfen bir kullanıcı seçin")
+        return
+    
+    if not messagebox.askyesno("Onay", "Bu kullanıcıyı silmek istediğinize emin misiniz?"):
+        return
+    
+    try:
+        # Kullanıcıyı veritabanından sil
+        self.db.execute(
+            "DELETE FROM users WHERE id = ?",
+            (self.current_user_id,),
+            commit=True
+        )
+        
+        messagebox.showinfo("Başarılı", "Kullanıcı silindi")
+        self.load_users_list()
+        self.new_user()  # Formu temizle
+        
+    except sqlite3.Error as e:
+        messagebox.showerror("Hata", f"Kullanıcı silinemedi:\n{str(e)}")
+
+# DİĞER YARDIMCI FONKSİYONLAR
+def update_status(self, message):
+    self.status_var.set(f"Durum: {message}")
+    self.root.update_idletasks()
+
+def set_theme(self, theme_name):
+    try:
+        self.style.theme_use(theme_name)
+    except:
+        self.style.theme_use("clam")
+
+def backup_database(self):
+    try:
+        if not os.path.exists(Config.BACKUP_DIR):
+            os.makedirs(Config.BACKUP_DIR)
+        
+        backup_file = os.path.join(
+            Config.BACKUP_DIR,
+            f"backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db"
+        )
+        
+        # Veritabanını kopyala
+        with open(Config.DB_NAME, 'rb') as f1, open(backup_file, 'wb') as f2:
+            f2.write(f1.read())
+        
+        messagebox.showinfo("Başarılı", f"Veritabanı yedeklendi:\n{backup_file}")
+    except Exception as e:
+        messagebox.showerror("Hata", f"Yedekleme başarısız:\n{str(e)}")
+
+def restore_database(self):
+    file_path = filedialog.askopenfilename(
+        title="Yedek Dosyası Seç",
+        filetypes=[("Veritabanı Dosyaları", "*.db"), ("Tüm Dosyalar", "*.*")]
+    )
+    
+    if not file_path:
+        return
+    
+    try:
+        # Mevcut veritabanını yedekle
+        self.backup_database()
+        
+        # Yeni veritabanını yükle
+        with open(file_path, 'rb') as f1, open(Config.DB_NAME, 'wb') as f2:
+            f2.write(f1.read())
+        
+        messagebox.showinfo("Başarılı", "Veritabanı geri yüklendi. Program yeniden başlatılacak.")
+        
+        # Programı yeniden başlat
+        python = sys.executable
+        os.execl(python, python, *sys.argv)
+        
+    except Exception as e:
+        messagebox.showerror("Hata", f"Geri yükleme başarısız:\n{str(e)}")
 
 
-        except sqlite3.Error as e:
-            self.muhasebe_rapor_text.insert(tk.END, f"\nVeritabanı hatası: {e}")
-            print(f"Masa geçmişi raporu hatası: {e}")
-        except Exception as e:
-            self.muhasebe_rapor_text.insert(tk.END, f"\nBeklenmedik hata: {e}")
-            print(f"Masa geçmişi raporu beklenmedik hata: {e}")
-
-
-    def _rapor_musteri_bakiye(self):
-        """Müşteri bakiye raporunu oluşturur."""
-        self.muhasebe_rapor_text.insert(tk.END, "=== Müşteri Bakiye Raporu ===\n\n")
-
-        try:
-            # Bakiyesi sıfırdan farklı olan müşterileri çek
-            self.cursor.execute('''
-                SELECT ad, soyad, telefon, cumulative_balance
-                FROM musteriler
-                WHERE ABS(cumulative_balance) > 0.01 -- Bakiyesi sıfıra çok yakın olmayanlar
-                ORDER BY cumulative_balance DESC, ad ASC
-            ''')
-            musteriler = self.cursor.fetchall()
-
-            if musteriler:
-                for musteri in musteriler:
-                    tam_ad = f"{musteri['ad']} {musteri['soyad']}".strip()
-                    self.muhasebe_rapor_text.insert(tk.END, f"Müşteri: {tam_ad}\n")
-                    self.muhasebe_rapor_text.insert(tk.END, f"Telefon: {musteri['telefon']}\n")
-                    self.muhasebe_rapor_text.insert(tk.END, f"Bakiye: {musteri['cumulative_balance']:.0f} ₺\n")
-                    self.muhasebe_rapor_text.insert(tk.END, "-"*30 + "\n")
-            else:
-                self.muhasebe_rapor_text.insert(tk.END, "Bakiyesi olan müşteri bulunamadı.\n")
-
-        except sqlite3.Error as e:
-            self.muhasebe_rapor_text.insert(tk.END, f"\nVeritabanı hatası: {e}")
-            print(f"Müşteri bakiye raporu hatası: {e}")
-        except Exception as e:
-            self.muhasebe_rapor_text.insert(tk.END, f"\nBeklenmedik hata: {e}")
-            print(f"Müşteri bakiye raporu beklenmedik hata: {e}")
-
-    def _rapor_urun_satis(self):
-        """Belirtilen tarih aralığı için ürün satış raporunu oluşturur (toplam miktar ve tutar)."""
-        baslangic_dt = self._parse_date_entry(self.muhasebe_baslangic_tarihi_entry)
-        bitis_dt = self._parse_date_entry(self.muhasebe_bitis_tarihi_entry)
-
-        if baslangic_dt is None or bitis_dt is None:
-            return # Hatalı tarih formatı uyarısı parse_date_entry içinde verildi
-
-        # Bitiş tarihini gün sonuna ayarla
-        bitis_dt = bitis_dt.replace(hour=23, minute=59, second=59, microsecond=999999)
-
-        baslangic_tarihi_db = baslangic_dt.strftime(DB_DATE_FORMAT)
-        bitis_tarihi_db = bitis_dt.strftime(DB_DATE_FORMAT)
-
-        self.muhasebe_rapor_text.insert(tk.END, f"=== Ürün Satış Raporu ({baslangic_dt.strftime(RAPOR_TARIH_FORMATI)} - {bitis_dt.strftime(RAPOR_TARIH_FORMATI)}) ===\n\n")
-
-        try:
-            # Ürün satışlarını toplam miktar ve tutara göre al
-            self.cursor.execute('''
-                SELECT sd.urun_adi, SUM(sd.miktar) as toplam_miktar, SUM(sd.tutar) as toplam_tutar
-                FROM siparis_detaylari sd
-                JOIN siparis_gecmisi sg ON sd.siparis_id = sg.id
-                WHERE sg.tarih BETWEEN ? AND ?
-                GROUP BY sd.urun_adi
-                ORDER BY toplam_miktar DESC, sd.urun_adi ASC
-            ''', (baslangic_tarihi_db, bitis_tarihi_db))
-            urun_satis_verileri = self.cursor.fetchall()
-
-            if urun_satis_verileri:
-                for urun in urun_satis_verileri:
-                    self.muhasebe_rapor_text.insert(tk.END, f"{urun['urun_adi']}: {urun['toplam_miktar']} adet ({urun['toplam_tutar']:.0f} ₺)\n")
-            else:
-                self.muhasebe_rapor_text.insert(tk.END, "Belirtilen tarih aralığında ürün satışı yapılmadı.\n")
-
-        except sqlite3.Error as e:
-            self.muhasebe_rapor_text.insert(tk.END, f"\nVeritabanı hatası: {e}")
-            print(f"Ürün satış raporu hatası: {e}")
-        except Exception as e:
-            self.muhasebe_rapor_text.insert(tk.END, f"\nBeklenmedik hata: {e}")
-            print(f"Ürün satış raporu beklenmedik hata: {e}")
-
-
-# Uygulamayı başlat
+# PROGRAM BAŞLATMA
 if __name__ == "__main__":
     root = tk.Tk()
-    app = CafeAdisyonProgrami(root)
+    
+    # Windows DPI ayarı
+    if sys.platform == "win32":
+        from ctypes import windll
+        windll.shcore.SetProcessDpiAwareness(1)
+    
+    # Tema ayarları
+    style = ttk.Style()
+    style.theme_use(Config.DEFAULT_THEME)
+    
+    # Özel stiller
+    style.configure("Accent.TButton", foreground="white", background="#4CAF50")
+    style.map("Accent.TButton", 
+              background=[("active", "#45a049"), ("disabled", "#cccccc")])
+    
+    style.configure("Product.TButton", padding=10, font=('Helvetica', 10))
+    style.configure("Disabled.TButton", foreground="#999999")
+    
+    app = CafeApp(root)
     root.mainloop()
