@@ -782,7 +782,8 @@ class CafeAdisyonProgrami:
     # --- Adisyon Sekmesi Fonksiyonları ---
 
     def adisyon_arayuz_olustur(self):
-        """Adisyon sekmesi arayüzünü oluşturur"""
+        """Adisyon sekmesi arayüzünü oluşturur
+        ve hızlı satış butonlarını ilk kez yükler."""
         # Bilgi Frame (üst kısım, sabit yükseklik)
         bilgi_frame = ttk.Frame(self.adisyon_frame)
         bilgi_frame.pack(pady=PAD_Y, fill=tk.X)
@@ -824,14 +825,16 @@ class CafeAdisyonProgrami:
         self.kategori_filtre_combobox = ttk.Combobox(kategori_frame, state="readonly", width=20)
         self.kategori_filtre_combobox.pack(side=tk.LEFT)
 
-        kategoriler = self._kategorileri_getir()
-        self.kategori_filtre_combobox['values'] = kategoriler
+        # Adisyon combobox'ını doldur (bu fonksiyon Part 7'de tanımlanmıştı)
+        # Kategoriler _kategorileri_getir(include_tumu=True) ile alınıyor
+        self._adisyon_kategori_combobox_guncelle() # Ayrı fonksiyona taşındı
 
-        if "Tümü" in kategoriler:
+        # Eğer "Tümü" seçeneği varsa varsayılan olarak ayarla
+        if "Tümü" in self.kategori_filtre_combobox['values']:
              self.kategori_filtre_combobox.set("Tümü")
-        self.kategori_filtre_combobox.bind("<<ComboboxSelected>>", lambda event: self._filter_hizli_satis_buttons(self.kategori_filtre_combobox.get())) # lambda ile category bilgisini geçir
 
-        self._filter_hizli_satis_buttons(self.kategori_filtre_combobox.get()) # İlk yüklemede butonları oluştur (varsayılan kategori ile)
+        self.kategori_filtre_combobox.bind("<<ComboboxSelected>>", self._filter_hizli_satis_buttons) # Event alan yeni fonksiyon
+
 
         # Hızlı Satış Butonları Alanı
         self.hizli_satis_container = ttk.Frame(self.adisyon_frame)
@@ -844,13 +847,14 @@ class CafeAdisyonProgrami:
         self.hizli_satis_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
         self.hizli_satis_canvas.configure(yscrollcommand=self.hizli_satis_scrollbar.set)
+        # Canvas resize olduğunda içindeki frame'in genişliğini ayarla
         self.hizli_satis_canvas.bind('<Configure>', lambda e: self.hizli_satis_canvas.itemconfigure("frame", width=self.hizli_satis_canvas.winfo_width()))
 
-        self.hizli_satis_frame = ttk.Frame(self.hizli_satis_canvas, style="HizliSatis.TFrame")
+        self.hizli_satis_frame = ttk.Frame(self.hizli_satis_canvas, style="HizliSatis.TFrame") # <-- self.hizli_satis_frame burada oluşturuldu
         self.hizli_satis_canvas.create_window((0, 0), window=self.hizli_satis_frame, anchor="nw", tags="frame")
 
+        # Frame resize olduğunda Canvas'ın scroll bölgesini güncelle
         self.hizli_satis_frame.bind('<Configure>', lambda e: self.hizli_satis_canvas.config(scrollregion=self.hizli_satis_canvas.bbox("all")))
-
 
         # Sepet Tablosu (Treeview kullanılıyor)
         self.sepet_tablo = ttk.Treeview(self.adisyon_frame, columns=("Urun", "Fiyat", "Miktar", "Tutar"), show="headings", height=6)
@@ -873,11 +877,12 @@ class CafeAdisyonProgrami:
         self.miktar_spinbox = tk.Spinbox(kontrol_frame, from_=1, to=99, width=5, font=("Arial", 10))
         self.miktar_spinbox.pack(side=tk.LEFT, padx=PAD_X)
 
-        ttk.Button(kontrol_frame, text="Sepete Ekle", style="EkleCikar.TButton", command=self._sepete_ekle_action).pack(side=tk.LEFT, padx=PAD_X)
-        ttk.Button(kontrol_frame, text="Seçileni Çıkar", style="EkleCikar.TButton", command=self._adisyon_kalem_sil).pack(side=tk.LEFT, padx=PAD_X) # _adisyon_kalem_sil olarak düzeltildi
-        ttk.Button(kontrol_frame, text="Sepeti Temizle", style="EkleCikar.TButton", command=self._sepeti_temizle).pack(side=tk.LEFT, padx=PAD_X)
-        ttk.Button(kontrol_frame, text="İndirim Uygula", style="Odeme.TButton", command=self.indirimi_uygula_action).pack(side=tk.LEFT, padx=PAD_X)
+        # Miktar güncelleme butonu eklendi (Seçileni Çıkar butonunun yerine)
+        ttk.Button(kontrol_frame, text="Seçileni Miktarını Güncelle", style="EkleCikar.TButton", command=self._adisyon_kalem_miktar_guncelle).pack(side=tk.LEFT, padx=PAD_X)
 
+        ttk.Button(kontrol_frame, text="Seçileni Sil", style="EkleCikar.TButton", command=self._adisyon_kalem_sil).pack(side=tk.LEFT, padx=PAD_X)
+        ttk.Button(kontrol_frame, text="Sepeti Temizle", style="EkleCikar.TButton", command=self._sepeti_temizle).pack(side=tk.LEFT, padx=PAD_X)
+        ttk.Button(kontrol_frame, text="İndirim Uygula (%)", style="Odeme.TButton", command=self.indirimi_uygula_action).pack(side=tk.LEFT, padx=PAD_X)
 
         # Ödeme ve Toplam Frame
         odeme_toplam_frame = ttk.Frame(self.adisyon_frame)
@@ -887,18 +892,19 @@ class CafeAdisyonProgrami:
         odeme_button_frame = ttk.Frame(odeme_toplam_frame)
         odeme_button_frame.pack(side=tk.LEFT, fill=tk.X, expand=True)
 
-        ttk.Button(odeme_button_frame, text="Masa Hesap Bilgisi", style="Odeme.TButton", command=self._nakit_odeme_bilgi).pack(side=tk.LEFT, padx=(0, PAD_X), fill=tk.X, expand=True)
+        ttk.Button(odeme_button_frame, text="Masa Hesap Bilgisi", style="Odeme.TButton",
+                   command=self._nakit_odeme_bilgi).pack(side=tk.LEFT, padx=(0, PAD_X), fill=tk.X, expand=True)
         ttk.Button(odeme_button_frame, text="Ara Ödeme Al", style="AraOdeme.TButton", command=self._ara_odeme).pack(side=tk.LEFT, padx=(0, PAD_X), fill=tk.X, expand=True)
         ttk.Button(odeme_button_frame, text="Masa Kapat (Kart)", style="Kapat.TButton", command=lambda: self._odeme_yap("Kredi Kartı")).pack(side=tk.LEFT, padx=(0, PAD_X), fill=tk.X, expand=True)
         ttk.Button(odeme_button_frame, text="Masa Kapat (Nakit)", style="Kapat.TButton", command=lambda: self._odeme_yap("Nakit")).pack(side=tk.LEFT, fill=tk.X, expand=True)
-        #ttk.Button(odeme_button_frame, text="Masa Kapat (Veresiye)", style="Kapat.TButton", command=lambda: self._odeme_yap("Veresiye")).pack(side=tk.LEFT, padx=(10, PAD_X), fill=tk.X, expand=True)
 
 
         # Toplam Etiketleri (Sağ tarafa)
         toplam_label_frame = ttk.Frame(odeme_toplam_frame)
         toplam_label_frame.pack(side=tk.RIGHT) # Sağ tarafa yerleştir
 
-        self.toplam_label = ttk.Label(toplam_label_frame, text="Toplam: 0 ₺", style="Toplam.TLabel")
+        # Etiketlerin sırası değiştirildi (Net Tutar en sağda)
+        self.toplam_label = ttk.Label(toplam_label_frame, text="Toplam: 0 ₺", style="Toplam.TLabel") # Burası brüt toplam olacak
         self.toplam_label.pack(side=tk.RIGHT, padx=PAD_X)
 
         self.iskonto_label = ttk.Label(toplam_label_frame, text="İskonto: 0 ₺", style="Toplam.TLabel")
@@ -906,6 +912,10 @@ class CafeAdisyonProgrami:
 
         self.net_tutar_label = ttk.Label(toplam_label_frame, text="Net Tutar: 0 ₺", style="Toplam.TLabel")
         self.net_tutar_label.pack(side=tk.RIGHT, padx=PAD_X)
+
+        # --- Hızlı satış butonlarını ilk kez yükle ---
+        # Bu çağrı, self.hizli_satis_frame oluşturulduktan sonra yapılır.
+        self._filter_hizli_satis_buttons() # <-- Bu satır eklendi
 
 
     def _sepete_ekle_action(self):
@@ -1950,7 +1960,8 @@ class CafeAdisyonProgrami:
     # --- Ürün Yönetimi Sekmesi Fonksiyonları ---
 
     def urun_arayuz_olustur(self):
-        """Ürün Yönetimi sekmesi arayüzünü oluşturur."""
+        """Ürün Yönetimi sekmesi arayüzünü oluşturur.
+        Kategori alanı Combobox olarak güncellendi ve 'Kategori Ekle Bilgi' butonu kaldırıldı."""
         # Sol Panel (Ürün Listesi)
         urun_liste_frame = ttk.Frame(self.urun_frame)
         urun_liste_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, PAD_X))
@@ -1961,16 +1972,19 @@ class CafeAdisyonProgrami:
         treeview_scrollbar_frame = ttk.Frame(urun_liste_frame)
         treeview_scrollbar_frame.pack(fill=tk.BOTH, expand=True)
 
-        self.urun_tree = ttk.Treeview(treeview_scrollbar_frame, columns=("Sıra", "Adı", "Fiyatı", "Kategori"), show="headings")
+        self.urun_tree = ttk.Treeview(treeview_scrollbar_frame, columns=("Sıra", "Adı", "Fiyatı", "Kategori", "Aktif"),
+                                      show="headings")
         self.urun_tree.heading("Sıra", text="Sıra")
         self.urun_tree.heading("Adı", text="Ürün Adı")
         self.urun_tree.heading("Fiyatı", text="Fiyatı (₺)")
         self.urun_tree.heading("Kategori", text="Kategori")
+        self.urun_tree.heading("Aktif", text="Aktif") # Aktif sütunu eklendi
 
         self.urun_tree.column("Sıra", width=50, anchor='center')
         self.urun_tree.column("Adı", width=150)
         self.urun_tree.column("Fiyatı", width=80, anchor='e')
         self.urun_tree.column("Kategori", width=100)
+        self.urun_tree.column("Aktif", width=60, anchor='center') # Aktif sütun genişliği
 
         self.urun_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
@@ -2000,8 +2014,11 @@ class CafeAdisyonProgrami:
         self.urun_fiyat_entry.pack(pady=(0, PAD_Y), fill=tk.X)
 
         ttk.Label(urun_form_frame, text="Kategori:").pack(anchor=tk.W)
-        self.urun_kategori_entry = ttk.Entry(urun_form_frame, width=30)
-        self.urun_kategori_entry.pack(pady=(0, PAD_Y), fill=tk.X)
+        # Kategori Combobox eklendi
+        self.urun_kategori_combobox = ttk.Combobox(urun_form_frame, width=27) # Genişlik ayarlandı
+        self.urun_kategori_combobox.pack(pady=(0, PAD_Y), fill=tk.X)
+        # Combobox'ı mevcut kategorilerle doldur
+        self.urun_kategori_combobox['values'] = self._kategorileri_getir(include_tumu=False) # 'Tümü' hariç kategoriler
 
         # Aktif Checkbutton
         self.urun_aktif_var = tk.IntVar(value=1)
@@ -2013,17 +2030,24 @@ class CafeAdisyonProgrami:
         button_frame.pack(pady=PAD_Y, fill=tk.X)
 
         # Ürün Yönetimi Butonları
-        ttk.Button(button_frame, text="Yeni Ürün Ekle", style="Yonetim.TButton", command=self._urun_ekle).pack(side=tk.LEFT, padx=(0, PAD_X), fill=tk.X, expand=True)
-        ttk.Button(button_frame, text="Ürünü Güncelle", style="Yonetim.TButton", command=self._urun_guncelle).pack(side=tk.LEFT, padx=(0, PAD_X), fill=tk.X, expand=True)
-        ttk.Button(button_frame, text="Ürünü Sil", style="Temizle.TButton", command=self._urun_sil).pack(side=tk.LEFT, fill=tk.X, expand=True)
+        ttk.Button(button_frame, text="Yeni Ürün Ekle", style="Yonetim.TButton",
+                   command=self._urun_ekle).pack(side=tk.LEFT, padx=(0, PAD_X), fill=tk.X, expand=True)
+        ttk.Button(button_frame, text="Ürünü Güncelle", style="Yonetim.TButton",
+                   command=self._urun_guncelle).pack(side=tk.LEFT, padx=(0, PAD_X), fill=tk.X, expand=True)
+        ttk.Button(button_frame, text="Ürünü Sil", style="Temizle.TButton", command=self._urun_sil).pack(side=tk.LEFT,
+                                                                                                      fill=tk.X, expand=True)
 
         # Kategori Yönetimi Butonları (Ayrı satırda)
         kategori_button_frame = ttk.Frame(urun_form_frame)
         kategori_button_frame.pack(pady=(0, PAD_Y), fill=tk.X)
-        ttk.Button(kategori_button_frame, text="Kategori Ekle", style="Yonetim.TButton", command=self._kategori_ekle).pack(side=tk.LEFT, padx=(0, PAD_X), fill=tk.X, expand=True)
-        ttk.Button(kategori_button_frame, text="Kategori Sil", style="Temizle.TButton", command=self._kategori_sil).pack(side=tk.LEFT, fill=tk.X, expand=True)
+        # 'Kategori Ekle Bilgi' butonu kaldırıldı.
+        # ttk.Button(kategori_button_frame, text="Kategori Ekle Bilgi", style="Yonetim.TButton",
+        #            command=self._kategori_ekle_bilgi).pack(side=tk.LEFT, padx=(0, PAD_X), fill=tk.X, expand=True)
+        ttk.Button(kategori_button_frame, text="Kategori Sil", style="Temizle.TButton",
+                   command=self._kategori_sil).pack(side=tk.LEFT, fill=tk.X, expand=True) # Bu buton kalıyor
 
-
+        # Formu temizle ve listeyi yükle
+        self._urun_formunu_temizle() # Ürün formu temizlendi
         self._urunleri_yukle() # Ürünleri Treeview'e yükle
 
     def _urunleri_yukle(self):
@@ -2055,23 +2079,25 @@ class CafeAdisyonProgrami:
             print(f"Beklenmedik hata oluştu (_urunleri_yukle): {e}")
 
     def _urun_sec(self, event):
-        """Ürün listesinden bir ürün seçildiğinde form alanlarını doldurur."""
-        selected_item = self.urun_tree.selection()
-        if not selected_item:
+        """Ürün listesinden bir ürün seçildiğinde form alanlarını doldurur.
+        Kategori Combobox doldurma eklendi."""
+        # selection() seçili öğelerin iid'lerini içeren bir tuple döndürür.
+        selected_items = self.urun_tree.selection()
+        if not selected_items:
             self._urun_formunu_temizle() # Seçim kalkarsa formu temizle
+            self.secili_urun_id = None
             return
 
-        # Seçilen öğenin değerlerini al
-        # item_values, Treeview'a insert edilen values tuple'ıdır.
-        # Sütunlar: "Sıra", "Adı", "Fiyatı", "Kategori", "Aktif"
-        # Indexler:     0     1       2         3         4
-        item_values = self.urun_tree.item(selected_item, 'values')
-        # Öğenin ID'sini al (veritabanındaki urun_id'ye karşılık gelir)
-        if selected_item:
-            self.secili_urun_id = selected_item
-        else:
-            self.secili_urun_id = None
+        # Genellikle tek bir öğe seçilir, tuple'ın ilk öğesini (yani iid'yi) alalım.
+        selected_iid = selected_items[0]
 
+        # selected_iid zaten Treeview öğesinin iid'si (veritabanındaki urun['id'] integer değeri)
+        # Bu değeri doğrudan secili_urun_id'ye atayın.
+        self.secili_urun_id = selected_iid
+
+        # Seçilen öğenin değerlerini al (form alanlarını doldurmak için)
+        # item() metoduna tekil iid'yi gönderebiliriz.
+        item_values = self.urun_tree.item(selected_iid, 'values')
 
         # item_values tuple'ının boyutunu kontrol et
         # Beklenen 5 sütun var: Sıra, Adı, Fiyatı, Kategori, Aktif
@@ -2085,41 +2111,42 @@ class CafeAdisyonProgrami:
         try:
             # Değerleri ilgili giriş alanlarına yerleştir
             # İndexler: Sıra=0, Adı=1, Fiyatı=2, Kategori=3, Aktif=4
-            sira = item_values if item_values is not None else ""
-            urun_adi = item_values[2] if item_values[2] is not None else ""
-            fiyat = item_values[1].replace(' ₺', '').strip() if item_values[1] is not None else "" # Fiyatı alırken ' ₺' karakterini temizle
+            sira = item_values[0] if item_values[0] is not None else ""
+            urun_adi = item_values[1] if item_values[1] is not None else ""
+            # Fiyatı alırken ' ₺' karakterini temizle, None kontrolü eklendi
+            fiyat_str = item_values[2].replace(' ₺', '').strip() if item_values[2] is not None else ""
             kategori = item_values[3] if item_values[3] is not None else ""
             aktif_str = item_values[4] if item_values[4] is not None else "Pasif" # "Aktif" veya "Pasif"
 
-            self.urun_sira_entry.delete(0, tk.END)
-            self.urun_sira_entry.insert(0, sira)
 
-            self.urun_adi_entry.delete(0, tk.END)
-            self.urun_adi_entry.insert(0, urun_adi)
+            if hasattr(self, 'urun_sira_entry'): self.urun_sira_entry.delete(0, tk.END); self.urun_sira_entry.insert(0, sira)
+            if hasattr(self, 'urun_adi_entry'): self.urun_adi_entry.delete(0, tk.END); self.urun_adi_entry.insert(0, urun_adi)
+            if hasattr(self, 'urun_fiyat_entry'): self.urun_fiyat_entry.delete(0, tk.END); self.urun_fiyat_entry.insert(0, fiyat_str) # String olarak insert et
 
-            self.urun_fiyat_entry.delete(0, tk.END)
-            self.urun_fiyat_entry.insert(0, fiyat)
+            # Kategori Combobox'ı doldur
+            if hasattr(self, 'urun_kategori_combobox'):
+                 # Mevcut kategorileri yükle (eğer Combobox boşsa veya kategori listede yoksa diye)
+                 self.urun_kategori_combobox['values'] = self._kategorileri_getir(include_tumu=False)
+                 # Seçilen ürünün kategorisini Combobox'ta göster
+                 self.urun_kategori_combobox.set(kategori) # <-- Combobox'a değeri set et
 
-            self.urun_kategori_entry.delete(0, tk.END)
-            self.urun_kategori_entry.insert(0, kategori)
+            # if hasattr(self, 'urun_kategori_entry'): self.urun_kategori_entry.delete(0, tk.END); self.urun_kategori_entry.insert(0, kategori) # <-- Entry doldurma kaldırıldı
+
 
             # Aktif checkbox'ı ayarla
-            if aktif_str == "Aktif":
-                self.urun_aktif_var.set(1)
-            else:
-                self.urun_aktif_var.set(0)
+            if hasattr(self, 'urun_aktif_var'):
+                if aktif_str == "Aktif":
+                    self.urun_aktif_var.set(1)
+                else:
+                    self.urun_aktif_var.set(0)
+
 
         except IndexError:
-            print(f"Hata: Treeview öğesi değerlerine erişirken index hatası: {item_values}")
+            print(f"Hata: Treeview öğesi değerlerine erişirken index hatası (_urun_sec): {item_values}")
             messagebox.showerror("Hata", "Ürün bilgileri yüklenirken beklenmedik hata (IndexError).", parent=self.urun_frame)
             self._urun_formunu_temizle()
             self.secili_urun_id = None
-        except ValueError:
-            print(f"Hata: Fiyat değeri sayıya dönüştürülemedi: {item_values[2]}")
-            messagebox.showerror("Hata", "Ürün fiyatı geçersiz formatta.", parent=self.urun_frame)
-            self._urun_formunu_temizle()
-            self.secili_urun_id = None
-        except Exception as e:
+        except Exception as e: # Genel Exception yakalama eklendi
             print(f"Beklenmedik hata oluştu (_urun_sec): {e}")
             messagebox.showerror("Hata", f"Ürün bilgileri yüklenirken beklenmedik hata: {e}", parent=self.urun_frame)
             self._urun_formunu_temizle()
@@ -2127,33 +2154,52 @@ class CafeAdisyonProgrami:
 
 
     def _urun_formunu_temizle(self):
-        """Ürün yönetim form alanlarını temizler."""
-        self.urun_sira_entry.delete(0, tk.END)
-        self.urun_adi_entry.delete(0, tk.END)
-        self.urun_fiyat_entry.delete(0, tk.END)
-        self.urun_kategori_entry.delete(0, tk.END)
-        self.urun_aktif_var.set(1) # Varsayılan olarak Aktif seçili gelsin
+        """Ürün yönetim form alanlarını temizler.
+        Kategori Combobox temizleme eklendi."""
+        if hasattr(self, 'urun_sira_entry'): self.urun_sira_entry.delete(0, tk.END)
+        if hasattr(self, 'urun_adi_entry'): self.urun_adi_entry.delete(0, tk.END)
+        if hasattr(self, 'urun_fiyat_entry'): self.urun_fiyat_entry.delete(0, tk.END)
+        # Kategori Combobox'ı temizle
+        if hasattr(self, 'urun_kategori_combobox'): self.urun_kategori_combobox.set("") # Değerini boş string yap
+        # if hasattr(self, 'urun_kategori_entry'): self.urun_kategori_entry.delete(0, tk.END) # <-- Entry temizleme kaldırıldı
+        if hasattr(self, 'urun_aktif_var'): self.urun_aktif_var.set(1) # Varsayılan olarak Aktif seçili gelsin
         self.secili_urun_id = None # Seçili ürün ID'sini sıfırla
 
 
     def _urun_ekle(self):
-        """Yeni ürün ekler."""
+        """Yeni ürün ekler. Kategori Combobox'tan alınır."""
+        # UI elementlerinin tanımlı olup olmadığını kontrol et
+        if not hasattr(self, 'urun_sira_entry') or \
+           not hasattr(self, 'urun_adi_entry') or \
+           not hasattr(self, 'urun_fiyat_entry') or \
+           not hasattr(self, 'urun_kategori_combobox') or \
+           not hasattr(self, 'urun_aktif_var'):
+            print("Hata: Ürün formu UI elementleri tanımlı değil (_urun_ekle).")
+            messagebox.showerror("Hata", "Ürün ekleme formu hazır değil.", parent=self.urun_frame)
+            return
+
         sira_str = self.urun_sira_entry.get().strip()
         urun_adi = self.urun_adi_entry.get().strip()
         fiyat_str = self.urun_fiyat_entry.get().strip()
-        kategori = self.urun_kategori_entry.get().strip()
+        # Kategori Combobox'tan alındı
+        kategori = self.urun_kategori_combobox.get().strip() # <-- Combobox değeri alındı
         aktif = self.urun_aktif_var.get() # 1 veya 0
 
         if not urun_adi or not fiyat_str:
             messagebox.showwarning("Uyarı", "Ürün Adı ve Fiyatı boş bırakılamaz.", parent=self.urun_frame)
             return
+        # Kategori boş bırakılabilir, ama uyarı verilebilir
+        # if not kategori:
+        #     messagebox.showwarning("Uyarı", "Ürün Kategorisi boş bırakılamaz.", parent=self.urun_frame)
+        #     return
+
 
         try:
             sira = int(sira_str) if sira_str else None # Sıra boş bırakılabilir
             fiyat = float(fiyat_str)
             if fiyat < 0:
-                 messagebox.showwarning("Uyarı", "Fiyat negatif olamaz.", parent=self.urun_frame)
-                 return
+                messagebox.showwarning("Uyarı", "Fiyat negatif olamaz.", parent=self.urun_frame)
+                return
 
         except ValueError:
             messagebox.showwarning("Uyarı", "Sıra ve Fiyat için geçerli sayısal değerler girin.", parent=self.urun_frame)
@@ -2163,45 +2209,67 @@ class CafeAdisyonProgrami:
             self.cursor.execute('''
                 INSERT INTO urunler (sira, urun_adi, fiyat, kategori, aktif)
                 VALUES (?, ?, ?, ?, ?)
-            ''', (sira, urun_adi, fiyat, kategori, aktif))
+            ''', (sira, urun_adi, fiyat, kategori if kategori else None, aktif)) # Boş kategori None olarak kaydedildi
             self.conn.commit()
             messagebox.showinfo("Başarılı", "Ürün başarıyla eklendi.", parent=self.urun_frame)
             self._urunleri_yukle() # Listeyi yenile
             self._urun_formunu_temizle() # Formu temizle
-            self._filter_hizli_satis_buttons(self.kategori_filtre_combobox.get() if hasattr(self, 'kategori_filtre_combobox') else "Tümü") # Hızlı satış butonlarını yenile (yeni kategori/ürün eklenmiş olabilir)
+            self._filter_hizli_satis_buttons() # Hızlı satış butonlarını yenile (yeni kategori/ürün eklenmiş olabilir)
+            # Kategori combobox'larını güncelle (Ürün Yönetimi ve Adisyon)
+            self._urun_kategori_combobox_guncelle() # Ürün Yönetimi combobox
+            self._adisyon_kategori_combobox_guncelle() # Adisyon combobox
+
 
         except sqlite3.IntegrityError:
-            messagebox.showwarning("Uyarı", "Bu ürün adı veya sıra numarası zaten mevcut.", parent=self.urun_frame)
+            messagebox.showwarning("Uyarı", "Bu ürün adı zaten mevcut.", parent=self.urun_frame) # Ürün adı unique
+            self.conn.rollback() # Hata durumunda geri al
         except sqlite3.Error as e:
             messagebox.showerror("Veritabanı Hatası", f"Ürün eklenirken hata oluştu: {e}", parent=self.urun_frame)
-            self.conn.rollback()
+            print(f"Veritabanı hatası _urun_ekle: {e}")
+            self.conn.rollback() # Hata durumunda geri al
         except Exception as e:
             messagebox.showerror("Hata", f"Ürün eklenirken beklenmedik hata: {e}", parent=self.urun_frame)
-            print(f"Ürün ekleme hatası: {e}")
+            print(f"Beklenmedik hata _urun_ekle: {e}")
 
 
     def _urun_guncelle(self):
-        """Seçili ürünü günceller."""
+        """Seçili ürünü günceller. Kategori Combobox'tan alınır."""
         if self.secili_urun_id is None:
             messagebox.showwarning("Uyarı", "Lütfen önce listeden güncellenecek bir ürün seçin.", parent=self.urun_frame)
             return
 
+        # UI elementlerinin tanımlı olup olmadığını kontrol et
+        if not hasattr(self, 'urun_sira_entry') or \
+           not hasattr(self, 'urun_adi_entry') or \
+           not hasattr(self, 'urun_fiyat_entry') or \
+           not hasattr(self, 'urun_kategori_combobox') or \
+           not hasattr(self, 'urun_aktif_var'):
+            print("Hata: Ürün formu UI elementleri tanımlı değil (_urun_guncelle).")
+            messagebox.showerror("Hata", "Ürün güncelleme formu hazır değil.", parent=self.urun_frame)
+            return
+
+
         sira_str = self.urun_sira_entry.get().strip()
         urun_adi = self.urun_adi_entry.get().strip()
         fiyat_str = self.urun_fiyat_entry.get().strip()
-        kategori = self.urun_kategori_entry.get().strip()
+        # Kategori Combobox'tan alındı
+        kategori = self.urun_kategori_combobox.get().strip() # <-- Combobox değeri alındı
         aktif = self.urun_aktif_var.get() # 1 veya 0
 
         if not urun_adi or not fiyat_str:
             messagebox.showwarning("Uyarı", "Ürün Adı ve Fiyatı boş bırakılamaz.", parent=self.urun_frame)
             return
+        # if not kategori:
+        #     messagebox.showwarning("Uyarı", "Ürün Kategorisi boş bırakılamaz.", parent=self.urun_frame)
+        #     return
+
 
         try:
             sira = int(sira_str) if sira_str else None # Sıra boş bırakılabilir
             fiyat = float(fiyat_str)
             if fiyat < 0:
-                 messagebox.showwarning("Uyarı", "Fiyat negatif olamaz.", parent=self.urun_frame)
-                 return
+                messagebox.showwarning("Uyarı", "Fiyat negatif olamaz.", parent=self.urun_frame)
+                return
 
         except ValueError:
             messagebox.showwarning("Uyarı", "Sıra ve Fiyat için geçerli sayısal değerler girin.", parent=self.urun_frame)
@@ -2212,21 +2280,27 @@ class CafeAdisyonProgrami:
                 UPDATE urunler
                 SET sira = ?, urun_adi = ?, fiyat = ?, kategori = ?, aktif = ?
                 WHERE id = ?
-            ''', (sira, urun_adi, fiyat, kategori, aktif, self.secili_urun_id))
+            ''', (sira, urun_adi, fiyat, kategori if kategori else None, aktif, self.secili_urun_id)) # Boş kategori None olarak kaydedildi
             self.conn.commit()
             messagebox.showinfo("Başarılı", "Ürün başarıyla güncellendi.", parent=self.urun_frame)
             self._urunleri_yukle() # Listeyi yenile
             self._urun_formunu_temizle() # Formu temizle
-            self._filter_hizli_satis_buttons(self.kategori_filtre_combobox.get() if hasattr(self, 'kategori_filtre_combobox') else "Tümü") # Hızlı satış butonlarını yenile (ürün bilgisi değişmiş olabilir)
+            self._filter_hizli_satis_buttons() # Hızlı satış butonlarını yenile (ürün bilgisi değişmiş olabilir)
+            # Kategori combobox'larını güncelle (Ürün Yönetimi ve Adisyon)
+            self._urun_kategori_combobox_guncelle() # Ürün Yönetimi combobox
+            self._adisyon_kategori_combobox_guncelle() # Adisyon combobox
+
 
         except sqlite3.IntegrityError:
-            messagebox.showwarning("Uyarı", "Bu ürün adı veya sıra numarası zaten mevcut.", parent=self.urun_frame)
+            messagebox.showwarning("Uyarı", "Bu ürün adı zaten mevcut.", parent=self.urun_frame) # Ürün adı unique
+            self.conn.rollback() # Hata durumunda geri al
         except sqlite3.Error as e:
             messagebox.showerror("Veritabanı Hatası", f"Ürün güncellenirken hata oluştu: {e}", parent=self.urun_frame)
-            self.conn.rollback()
+            print(f"Veritabanı hatası _urun_guncelle: {e}")
+            self.conn.rollback() # Hata durumunda geri al
         except Exception as e:
             messagebox.showerror("Hata", f"Ürün güncellenirken beklenmedik hata: {e}", parent=self.urun_frame)
-            print(f"Ürün güncelleme hatası: {e}")
+            print(f"Beklenmedik hata _urun_guncelle: {e}")
 
 
     def _urun_sil(self):
@@ -2236,46 +2310,69 @@ class CafeAdisyonProgrami:
             return
 
         # Silinecek ürünün adını al
+        urun_adi = "Seçili Ürün" # Hata durumunda varsayılan metin
         try:
             self.cursor.execute("SELECT urun_adi FROM urunler WHERE id = ?", (self.secili_urun_id,))
-            urun_adi = self.cursor.fetchone()['urun_adi']
-        except Exception as e:
-             print(f"Silinecek ürün adı alınırken hata: {e}")
-             urun_adi = "Seçili Ürün" # Hata durumunda varsayılan metin
+            urun_adi_row = self.cursor.fetchone()
+            if urun_adi_row:
+                 urun_adi = urun_adi_row['urun_adi']
+            else:
+                 print(f"Uyarı: Silinecek ürün (ID: {self.secili_urun_id}) veritabanında bulunamadı.")
+                 messagebox.showwarning("Uyarı", "Silinecek ürün veritabanında bulunamadı.", parent=self.urun_frame)
+                 self._urun_formunu_temizle() # Formu temizle
+                 self._urunleri_yukle() # Listeyi yenile
+                 return # Ürün yoksa silme işlemine devam etme
 
-        if not messagebox.askyesno("Silme Onayı", f"{urun_adi} ürününü silmek istediğinize emin misiniz?", parent=self.urun_frame):
-            return
+        except Exception as e:
+            print(f"Silinecek ürün adı alınırken hata (_urun_sil): {e}")
+            # urun_adi varsayılan değerinde kalır
+
+
+        if not messagebox.askyesno("Silme Onayı", f"'{urun_adi}' ürününü silmek istediğinize emin misiniz?", parent=self.urun_frame):
+            return # Kullanıcı iptal etti
+
 
         try:
+            # Ürünü sil
             self.cursor.execute("DELETE FROM urunler WHERE id = ?", (self.secili_urun_id,))
             self.conn.commit()
             messagebox.showinfo("Başarılı", "Ürün başarıyla silindi.", parent=self.urun_frame)
             self._urunleri_yukle() # Listeyi yenile
             self._urun_formunu_temizle() # Formu temizle
-            self._filter_hizli_satis_buttons(self.kategori_filtre_combobox.get() if hasattr(self, 'kategori_filtre_combobox') else "Tümü") # Hızlı satış butonlarını yenile (ürün silindi)
+            self._filter_hizli_satis_buttons() # Hızlı satış butonlarını yenile (ürün silindi)
+            # Kategori combobox'larını güncelle (Ürün Yönetimi ve Adisyon)
+            self._urun_kategori_combobox_guncelle() # Ürün Yönetimi combobox
+            self._adisyon_kategori_combobox_guncelle() # Adisyon combobox
+
 
         except sqlite3.Error as e:
             messagebox.showerror("Veritabanı Hatası", f"Ürün silinirken hata oluştu: {e}", parent=self.urun_frame)
-            self.conn.rollback()
+            print(f"Veritabanı hatası _urun_sil: {e}")
+            self.conn.rollback() # Hata durumunda geri al
         except Exception as e:
             messagebox.showerror("Hata", f"Ürün silinirken beklenmedik hata: {e}", parent=self.urun_frame)
-            print(f"Ürün silme hatası: {e}")
+            print(f"Beklenmedik hata _urun_sil: {e}")
 
-
-    def _kategorileri_getir(self):
-        """Veritabanındaki ürün kategorilerini getirir ve 'Tümü' seçeneğini ekler."""
+    def _kategorileri_getir(self, include_tumu=True):
+        """Veritabanındaki aktif ürün kategorilerini getirir ve isteğe bağlı olarak 'Tümü'
+        seçeneğini ekler."""
         try:
-            self.cursor.execute("SELECT DISTINCT kategori FROM urunler WHERE aktif = 1 ORDER BY kategori")
-            kategoriler = [row['kategori'] for row in self.cursor.fetchall() if row['kategori']] # Boş kategorileri atla
-            kategoriler.insert(0, "Tümü") # Başa 'Tümü' seçeneğini ekle
+            # Sadece aktif ürünlerin kategorilerini çek
+            self.cursor.execute("SELECT DISTINCT kategori FROM urunler WHERE aktif = 1 AND kategori IS NOT NULL AND kategori != '' ORDER BY kategori")
+            # Boş veya NULL kategorileri atla
+            kategoriler = [row['kategori'] for row in self.cursor.fetchall()]
+
+            if include_tumu:
+                 kategoriler.insert(0, "Tümü") # Başa 'Tümü' seçeneğini ekle
+
             return kategoriler
         except sqlite3.Error as e:
             print(f"Kategorileri getirme hatası: {e}")
-            return ["Tümü", "Hata!"] # Hata durumunda varsayılan ve hata mesajı
+            messagebox.showerror("Veritabanı Hatası", f"Kategoriler yüklenirken hata oluştu: {e}")
+            return ["Hata!"] # Hata durumunda sadece hata mesajı dönsün (boş liste yerine)
         except Exception as e:
             print(f"Beklenmedik hata oluştu (_kategorileri_getir): {e}")
-            return ["Tümü", "Hata!"] # Hata durumunda varsayılan ve hata mesajı
-
+            return ["Hata!"] # Hata durumunda sadece hata mesajı dönsün
 
     def _kategori_ekle(self):
         """Yeni kategori eklemek için pencere açar."""
@@ -2300,47 +2397,130 @@ class CafeAdisyonProgrami:
 
 
     def _kategori_sil(self):
-        """Mevcut kategorilerden birini silmek için pencere açar."""
-        kategoriler = self._kategorileri_getir()
-        # 'Tümü' seçeneğini silme listesinden çıkar
-        if "Tümü" in kategoriler:
-             kategoriler.remove("Tümü")
+        """Mevcut kategorilerden birini açılır menüden seçerek siler."""
+        kategoriler = self._kategorileri_getir(include_tumu=False) # 'Tümü' hariç kategoriler
 
         if not kategoriler:
-             messagebox.showinfo("Bilgi", "Silinecek kategori bulunamadı.", parent=self.urun_frame)
-             return
+            messagebox.showinfo("Bilgi", "Silinecek aktif kategori bulunamadı.", parent=self.urun_frame)
+            return
 
-        # Kullanıcının silmek istediği kategoriyi seçmesini sağla
-        silinecek_kategori = simpledialog.askstring("Kategori Sil", "Silmek istediğiniz kategori adını girin:", parent=self.urun_frame)
+        # --- Özel Kategori Silme Seçim Penceresi Oluştur ---
+        delete_category_dialog = tk.Toplevel(self.root)
+        delete_category_dialog.title("Kategori Sil Seçim")
+        delete_category_dialog.transient(self.root) # Ana pencere üzerinde kalmasını sağlar
+        delete_category_dialog.grab_set() # Ana pencere etkileşimini engeller
 
-        if silinecek_kategori and silinecek_kategori.strip():
-            kategori_adi = silinecek_kategori.strip()
-            if kategori_adi not in kategoriler:
-                 messagebox.showwarning("Uyarı", f"'{kategori_adi}' adında bir kategori bulunamadı.", parent=self.urun_frame)
-                 return
+        dialog_frame = ttk.Frame(delete_category_dialog, padding="10")
+        dialog_frame.pack(fill=tk.BOTH, expand=True)
 
-            if not messagebox.askyesno("Silme Onayı", f"'{kategori_adi}' kategorisindeki TÜM ürünler silinecektir.\nDevam etmek istediğinize emin misiniz?", parent=self.urun_frame):
-                 return
+        ttk.Label(dialog_frame, text="Lütfen silmek istediğiniz kategoriyi seçin:").pack(pady=PAD_Y)
 
-            try:
-                # Belirtilen kategorideki ürünleri sil
-                self.cursor.execute("DELETE FROM urunler WHERE kategori = ?", (kategori_adi,))
-                self.conn.commit()
-                messagebox.showinfo("Başarılı", f"'{kategori_adi}' kategorisindeki tüm ürünler silindi.", parent=self.urun_frame)
-                self._urunleri_yukle() # Ürün listesini yenile
-                self._urun_formunu_temizle() # Formu temizle
-                self._filter_hizli_satis_buttons("Tümü") # Kategori combobox'ını 'Tümü' yap ve hızlı satış butonlarını yenile
+        # Kategori Seçim Combobox'ı
+        delete_category_combobox = ttk.Combobox(dialog_frame, state="readonly", width=30)
+        delete_category_combobox.pack(pady=PAD_Y)
+        delete_category_combobox['values'] = kategoriler
 
-            except sqlite3.Error as e:
-                messagebox.showerror("Veritabanı Hatası", f"Kategori silinirken hata oluştu: {e}", parent=self.urun_frame)
-                self.conn.rollback()
-            except Exception as e:
-                messagebox.showerror("Hata", f"Kategori silinirken beklenmedik hata: {e}", parent=self.urun_frame)
-                print(f"Kategori silme hatası: {e}")
+        # Varsayılan olarak ilk kategoriyi seçili yap
+        if kategoriler:
+            delete_category_combobox.set(kategoriler[0])
 
-        elif silinecek_kategori is not None: # Kullanıcı boş girdi ama iptal etmedi
-             messagebox.showwarning("Uyarı", "Kategori adı boş bırakılamaz.", parent=self.urun_frame)
+        # Butonlar Frame
+        button_frame = ttk.Frame(dialog_frame)
+        button_frame.pack(pady=PAD_Y)
 
+        # Silme Butonu
+        def on_delete():
+            selected_category = delete_category_combobox.get().strip()
+            if not selected_category:
+                messagebox.showwarning("Uyarı", "Lütfen silmek için bir kategori seçin.", parent=delete_category_dialog)
+                return
+            # Seçilen kategoriyi pencere objesine ata, böylece ana fonksiyonda erişebiliriz
+            delete_category_dialog.selected_category = selected_category
+            delete_category_dialog.destroy() # Pencereyi kapat
+
+        # İptal Butonu
+        def on_cancel():
+            delete_category_dialog.cancelled = True # İptal edildiğini işaretle
+            delete_category_dialog.destroy() # Pencereyi kapat
+
+        ttk.Button(button_frame, text="Sil", command=on_delete, style="Temizle.TButton").pack(side=tk.LEFT, padx=(0, PAD_X))
+        ttk.Button(button_frame, text="İptal", command=on_cancel).pack(side=tk.LEFT)
+
+        # Pencere kapatma butonuna basıldığında on_cancel'i çağır
+        delete_category_dialog.protocol("WM_DELETE_WINDOW", on_cancel)
+
+        # Pencereyi mod_sal yap ve kapanmasını bekle
+        self.root.wait_window(delete_category_dialog)
+        # --- Özel Pencere Sonu ---
+
+        # Pencere kapandıktan sonra seçilen kategoriyi kontrol et
+        if not hasattr(delete_category_dialog, 'selected_category'):
+             # Eğer 'selected_category' özelliği yoksa (iptal edildi veya seçilmeden kapatıldı)
+             print("Kategori silme işlemi iptal edildi veya kategori seçilmedi.")
+             return # İşlemi durdur
+
+        kategori_adi_sil = delete_category_dialog.selected_category # Seçilen kategori adını al
+
+        # Seçilen kategori gerçekten mevcut kategoriler listesinde mi bir kez daha kontrol edebiliriz (Opsiyonel)
+        # Ancak Combobox 'readonly' olduğu için listedeki kategorilerden biri seçilmiş olmalı.
+
+        if not messagebox.askyesno("Silme Onayı",
+                                   f"'{kategori_adi_sil}' kategorisindeki TÜM ÜRÜNLER silinecektir.\n"
+                                   "Bu işlem geri alınamaz!\nDevam etmek istediğinize emin misiniz?",
+                                   parent=self.urun_frame):
+            print("Kategori silme onayı kullanıcı tarafından iptal edildi.")
+            return # Kullanıcı iptal etti
+
+        try:
+            # Belirtilen kategorideki ürünleri sil (tam eşleşme ile)
+            self.cursor.execute("DELETE FROM urunler WHERE kategori = ?", (kategori_adi_sil,))
+            self.conn.commit()
+            messagebox.showinfo("Başarılı", f"'{kategori_adi_sil}' kategorisindeki tüm ürünler başarıyla silindi.", parent=self.urun_frame)
+            self._urunleri_yukle() # Ürün listesini yenile
+            self._urun_formunu_temizle() # Formu temizle
+            self._filter_hizli_satis_buttons() # Hızlı satış butonlarını yenile (ürün silindi)
+            # Kategori combobox'larını güncelle (Ürün Yönetimi ve Adisyon)
+            self._urun_kategori_combobox_guncelle() # Ürün Yönetimi combobox
+            self._adisyon_kategori_combobox_guncelle() # Adisyon combobox
+
+
+        except sqlite3.Error as e:
+            messagebox.showerror("Veritabanı Hatası", f"Kategori silinirken hata oluştu: {e}", parent=self.urun_frame)
+            print(f"Veritabanı hatası _kategori_sil: {e}")
+            self.conn.rollback() # Hata durumunda geri al
+        except Exception as e:
+            messagebox.showerror("Hata", f"Kategori silinirken beklenmedik hata: {e}", parent=self.urun_frame)
+            print(f"Beklenmedik hata _kategori_sil: {e}")
+
+    def _urun_kategori_combobox_guncelle(self):
+        """Ürün Yönetimi sekmesindeki kategori Combobox'ını güncel kategorilerle doldurur."""
+        if hasattr(self, 'urun_kategori_combobox') and isinstance(self.urun_kategori_combobox, ttk.Combobox):
+             try:
+                 kategoriler = self._kategorileri_getir(include_tumu=False)
+                 self.urun_kategori_combobox['values'] = kategoriler
+                 # Combobox'ın mevcut seçili değeri (varsa) listeden silindiyse boş kalır, bu beklenen bir durum.
+             except Exception as e:
+                  print(f"Ürün kategori combobox güncelleme hatası: {e}")
+                  # Hata durumunda bir şey yapmayalım, mevcut liste kalsın veya boş olsun.
+
+
+    def _adisyon_kategori_combobox_guncelle(self):
+        """Adisyon sekmesindeki kategori filtre Combobox'ını güncel kategorilerle doldurur."""
+        if hasattr(self, 'kategori_filtre_combobox') and isinstance(self.kategori_filtre_combobox, ttk.Combobox):
+             try:
+                 kategoriler = self._kategorileri_getir(include_tumu=True) # Adisyon combobox'a 'Tümü' eklenmeli
+                 self.kategori_filtre_combobox['values'] = kategoriler
+                 # Eğer mevcut seçili değer artık listede yoksa, Combobox ilk değere (Tümü) veya boş değerine döner.
+                 # Eğer mevcut seçili değer "Tümü" ise, o seçili kalır.
+                 # Basitçe değerleri yeniden atamak genellikle yeterlidir.
+                 # Eğer seçili değer kaybolduysa ve ilk değere dönmesini istemiyorsanız, değeri alıp yeni listede var mı kontrol edip tekrar set edebilirsiniz.
+                 # self.kategori_filtre_combobox.get() ile mevcut değeri alıp, kategoriler listesinde var mı kontrol edip
+                 # varsa tekrar set(mevcut_deger) yapabiliriz. Aksi takdirde set("Tümü") veya set("") yapabiliriz.
+                 # Şimdilik basit güncelleme yeterli.
+
+             except Exception as e:
+                  print(f"Adisyon kategori combobox güncelleme hatası: {e}")
+                   # Hata durumunda bir şey yapmayalım.
 
     def _filter_hizli_satis_buttons(self, category="Tümü"): # category parametresi eklendi
         """Kategori combobox seçimine veya arama çubuğuna göre hızlı satış butonlarını filtreler."""
@@ -2454,7 +2634,8 @@ class CafeAdisyonProgrami:
     # --- Müşteri İşlemleri Sekmesi Fonksiyonları ---
 
     def musteri_arayuz_olustur(self):
-        """Müşteri İşlemleri sekmesi arayüzünü oluşturur."""
+        """Müşteri İşlemleri sekmesi arayüzünü oluşturur.
+        Bakiye alanı yeni müşteri için aktif hale getirildi."""
         # Sol Panel (Müşteri Listesi)
         musteri_liste_frame = ttk.Frame(self.musteri_frame)
         musteri_liste_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, PAD_X))
@@ -2465,7 +2646,8 @@ class CafeAdisyonProgrami:
         treeview_scrollbar_frame = ttk.Frame(musteri_liste_frame)
         treeview_scrollbar_frame.pack(fill=tk.BOTH, expand=True)
 
-        self.musteri_tree = ttk.Treeview(treeview_scrollbar_frame, columns=("Adı Soyadı", "Telefon", "Adres", "Bakiye"), show="headings")
+        self.musteri_tree = ttk.Treeview(treeview_scrollbar_frame,
+                                         columns=("Adı Soyadı", "Telefon", "Adres", "Bakiye"), show="headings")
         self.musteri_tree.heading("Adı Soyadı", text="Adı Soyadı")
         self.musteri_tree.heading("Telefon", text="Telefon")
         self.musteri_tree.heading("Adres", text="Adres")
@@ -2510,28 +2692,31 @@ class CafeAdisyonProgrami:
         self.musteri_adres_entry.pack(pady=(0, PAD_Y), fill=tk.X)
 
         ttk.Label(musteri_form_frame, text="Bakiye (₺):").pack(anchor=tk.W)
-        self.musteri_bakiye_entry = ttk.Entry(musteri_form_frame, width=30, state='readonly') # Bakiye manuel değiştirilemesin
+        # Bakiye alanı artık başlangıçta normal, durumu _musteri_formu_temizle ve _musteri_sec içinde ayarlanacak
+        self.musteri_bakiye_entry = ttk.Entry(musteri_form_frame, width=30, state='normal') # <-- state='readonly' kaldırıldı
         self.musteri_bakiye_entry.pack(pady=(0, PAD_Y), fill=tk.X)
-        self.musteri_bakiye_entry.insert(0, "0.0") # Varsayılan bakiye 0
-
 
         # Butonlar Frame (Yan yana butonlar için)
         button_frame = ttk.Frame(musteri_form_frame)
         button_frame.pack(pady=PAD_Y, fill=tk.X)
 
         # Müşteri Yönetimi Butonları
-        ttk.Button(button_frame, text="Yeni Müşteri Ekle", style="Yonetim.TButton", command=self._musteri_ekle).pack(side=tk.LEFT, padx=(0, PAD_X), fill=tk.X, expand=True)
-        ttk.Button(button_frame, text="Müşteriyi Güncelle", style="Yonetim.TButton", command=self._musteri_guncelle).pack(side=tk.LEFT, padx=(0, PAD_X), fill=tk.X, expand=True)
-        ttk.Button(button_frame, text="Müşteriyi Sil", style="Temizle.TButton", command=self._musteri_sil).pack(side=tk.LEFT, fill=tk.X, expand=True)
+        ttk.Button(button_frame, text="Yeni Müşteri Ekle", style="Yonetim.TButton",
+                   command=self._musteri_ekle).pack(side=tk.LEFT, padx=(0, PAD_X), fill=tk.X, expand=True)
+        ttk.Button(button_frame, text="Müşteriyi Güncelle", style="Yonetim.TButton",
+                   command=self._musteri_guncelle).pack(side=tk.LEFT, padx=(0, PAD_X), fill=tk.X, expand=True)
+        ttk.Button(button_frame, text="Müşteriyi Sil", style="Temizle.TButton",
+                   command=self._musteri_sil).pack(side=tk.LEFT, fill=tk.X, expand=True)
 
         # Müşteri Atama Butonu (Ayrı satırda)
         assign_button_frame = ttk.Frame(musteri_form_frame)
         assign_button_frame.pack(pady=(0, PAD_Y), fill=tk.X)
-        ttk.Button(assign_button_frame, text="Müşteriyi Masaya Ata", style="Yonetim.TButton", command=self._initiate_assign_customer_mode).pack(fill=tk.X)
+        ttk.Button(assign_button_frame, text="Müşteriyi Masaya Ata", style="Yonetim.TButton",
+                   command=self._initiate_assign_customer_mode).pack(fill=tk.X)
 
-
+        # Formu temizle ve listeyi yükle (Bu çağrı bakiye alanının durumunu ayarlayacak)
+        self._musteri_formu_temizle() # Müşteri formu temizlendi
         self._musteri_listesini_guncelle() # Müşterileri Treeview'e yükle
-
 
     def _musteri_listesini_guncelle(self):
         """Müşteriler tablosundaki tüm müşterileri Müşteri İşlemleri sekmesindeki Treeview'a yükler."""
@@ -2560,14 +2745,22 @@ class CafeAdisyonProgrami:
 
 
     def _musteri_sec(self, event):
-        """Müşteri listesinden bir müşteri seçildiğinde form alanlarını doldurur."""
-        selected_item = self.musteri_tree.selection()
-        if not selected_item:
-            self._musteri_formu_temizle() # Seçim kalkarsa formu temizle
+        """Müşteri listesinden bir müşteri seçildiğinde form alanlarını
+        doldurur ve bakiye alanını salt okunur yapar."""
+        # selection() seçili öğelerin iid'lerini içeren bir tuple döndürür.
+        selected_items = self.musteri_tree.selection()
+        if not selected_items:
+            # Seçim kalkarsa veya boşsa formu temizle ve secili_musteri_id'yi sıfırla
+            self._musteri_formu_temizle()
+            self.secili_musteri_id = None
             return
 
-        # Seçilen öğenin ID'sini al (veritabanındaki musteri_id'ye karşılık gelir)
-        self.secili_musteri_id = self.musteri_tree.item(selected_item, 'iid')
+        # Genellikle tek bir öğe seçilir, tuple'ın ilk öğesini alalım.
+        selected_item_id = selected_items[0]
+
+        # selected_item_id zaten Treeview öğesinin iid'si (veritabanındaki musteri_id)
+        # Bu değeri doğrudan secili_musteri_id'ye atayın.
+        self.secili_musteri_id = selected_item_id
 
         try:
             # Müşteri bilgilerini veritabanından çek
@@ -2575,31 +2768,30 @@ class CafeAdisyonProgrami:
             musteri = self.cursor.fetchone()
 
             if musteri:
-                self.musteri_ad_entry.delete(0, tk.END)
-                self.musteri_ad_entry.insert(0, musteri['ad'] if musteri['ad'] is not None else "")
+                # UI elementlerinin tanımlı olup olmadığını kontrol etmeden set etme
+                if hasattr(self, 'musteri_ad_entry'):
+                    self.musteri_ad_entry.delete(0, tk.END); self.musteri_ad_entry.insert(0, musteri['ad'] if musteri['ad'] is not None else "")
+                if hasattr(self, 'musteri_soyad_entry'):
+                    self.musteri_soyad_entry.delete(0, tk.END); self.musteri_soyad_entry.insert(0, musteri['soyad'] if musteri['soyad'] is not None else "")
+                if hasattr(self, 'musteri_telefon_entry'):
+                    self.musteri_telefon_entry.delete(0, tk.END); self.musteri_telefon_entry.insert(0, musteri['telefon'] if musteri['telefon'] is not None else "")
+                if hasattr(self, 'musteri_adres_entry'):
+                    self.musteri_adres_entry.delete(0, tk.END); self.musteri_adres_entry.insert(0, musteri['adres'] if musteri['adres'] is not None else "")
 
-                self.musteri_soyad_entry.delete(0, tk.END)
-                self.musteri_soyad_entry.insert(0, musteri['soyad'] if musteri['soyad'] is not None else "")
-
-                self.musteri_telefon_entry.delete(0, tk.END)
-                self.musteri_telefon_entry.insert(0, musteri['telefon'] if musteri['telefon'] is not None else "")
-
-                self.musteri_adres_entry.delete(0, tk.END)
-                self.musteri_adres_entry.insert(0, musteri['adres'] if musteri['adres'] is not None else "")
-
-                # Bakiye alanını güncelle (readonly olduğu için state'i normal yapıp sonra tekrar readonly yap)
-                self.musteri_bakiye_entry.config(state='normal')
-                self.musteri_bakiye_entry.delete(0, tk.END)
-                bakiye = musteri['cumulative_balance'] if musteri['cumulative_balance'] is not None else 0.0
-                self.musteri_bakiye_entry.insert(0, f"{bakiye:.0f}") # Bakiye formatlı
-                self.musteri_bakiye_entry.config(state='readonly')
-
+                # Bakiye alanını güncelle (manuel girişi engellemek için readonly yap)
+                if hasattr(self, 'musteri_bakiye_entry'):
+                    self.musteri_bakiye_entry.config(state='normal') # Değeri set etmeden önce normal yap
+                    self.musteri_bakiye_entry.delete(0, tk.END)
+                    bakiye = musteri['cumulative_balance'] if musteri['cumulative_balance'] is not None else 0.0
+                    self.musteri_bakiye_entry.insert(0, f"{bakiye:.0f}") # Bakiye formatlı
+                    self.musteri_bakiye_entry.config(state='readonly') # <-- Bakiye alanı salt okunur yapıldı
 
             else:
-                 # Seçili müşteri veritabanında bulunamazsa formu temizle
-                 self._musteri_formu_temizle()
-                 self.secili_musteri_id = None # ID'yi sıfırla
-                 messagebox.showwarning("Uyarı", "Seçili müşteri bilgisi veritabanında bulunamadı.", parent=self.musteri_frame)
+                # Seçili müşteri veritabanında bulunamazsa formu temizle
+                print(f"Uyarı: Seçili müşteri (ID: {self.secili_musteri_id}) _musteri_sec içinde veritabanında bulunamadı.")
+                self._musteri_formu_temizle()
+                self.secili_musteri_id = None # ID'yi sıfırla
+                messagebox.showwarning("Uyarı", "Seçili müşteri bilgisi veritabanında bulunamadı.", parent=self.musteri_frame)
 
 
         except sqlite3.Error as e:
@@ -2607,7 +2799,7 @@ class CafeAdisyonProgrami:
             messagebox.showerror("Veritabanı Hatası", f"Müşteri bilgileri yüklenirken hata oluştu: {e}")
             self._musteri_formu_temizle()
             self.secili_musteri_id = None
-        except Exception as e:
+        except Exception as e: # Genel Exception yakalama eklendi
             print(f"Beklenmedik hata oluştu (_musteri_sec): {e}")
             messagebox.showerror("Hata", f"Müşteri bilgileri yüklenirken beklenmedik hata: {e}")
             self._musteri_formu_temizle()
@@ -2615,98 +2807,138 @@ class CafeAdisyonProgrami:
 
 
     def _musteri_formu_temizle(self):
-        """Müşteri yönetim form alanlarını temizler."""
-        self.musteri_ad_entry.delete(0, tk.END)
-        self.musteri_soyad_entry.delete(0, tk.END)
-        self.musteri_telefon_entry.delete(0, tk.END)
-        self.musteri_adres_entry.delete(0, tk.END)
-        # Bakiye alanını temizle (readonly olduğu için state'i normal yapıp sonra tekrar readonly yap)
-        self.musteri_bakiye_entry.config(state='normal')
-        self.musteri_bakiye_entry.delete(0, tk.END)
-        self.musteri_bakiye_entry.insert(0, "0.0")
-        self.musteri_bakiye_entry.config(state='readonly')
+        """Müşteri yönetim form alanlarını temizler ve bakiye alanını aktif yapar."""
+        if hasattr(self, 'musteri_ad_entry'): self.musteri_ad_entry.delete(0, tk.END)
+        if hasattr(self, 'musteri_soyad_entry'): self.musteri_soyad_entry.delete(0, tk.END)
+        if hasattr(self, 'musteri_telefon_entry'): self.musteri_telefon_entry.delete(0, tk.END)
+        if hasattr(self, 'musteri_adres_entry'): self.musteri_adres_entry.delete(0, tk.END)
+
+        if hasattr(self, 'musteri_bakiye_entry'):
+            self.musteri_bakiye_entry.config(state='normal') # <-- Bakiye alanı aktif yapıldı
+            self.musteri_bakiye_entry.delete(0, tk.END)
+            self.musteri_bakiye_entry.insert(0, "0.0") # <-- Varsayılan başlangıç bakiyesi
+            self.musteri_bakiye_entry.config(state='normal') # Tekrar aktif yapma garantisi
+
 
         self.secili_musteri_id = None # Seçili müşteri ID'sini sıfırla
 
 
     def _musteri_ekle(self):
-        """Yeni müşteri ekler."""
+        """Yeni müşteri ekler. Başlangıç bakiyesi formdan alınır."""
+        # UI elementlerinin tanımlı olup olmadığını kontrol et
+        if not hasattr(self, 'musteri_ad_entry') or \
+           not hasattr(self, 'musteri_soyad_entry') or \
+           not hasattr(self, 'musteri_telefon_entry') or \
+           not hasattr(self, 'musteri_adres_entry') or \
+           not hasattr(self, 'musteri_bakiye_entry'):
+            print("Hata: Müşteri formu UI elementleri tanımlı değil (_musteri_ekle).")
+            messagebox.showerror("Hata", "Müşteri ekleme formu hazır değil.", parent=self.musteri_frame)
+            return
+
         ad = self.musteri_ad_entry.get().strip()
         soyad = self.musteri_soyad_entry.get().strip()
         telefon = self.musteri_telefon_entry.get().strip()
         adres = self.musteri_adres_entry.get().strip()
-        # Bakiye manuel girilmiyor, varsayılan 0.0
+        # Başlangıç bakiyesi formdan alındı
+        bakiye_str = self.musteri_bakiye_entry.get().strip() # <-- Bakiye değeri alındı
 
         if not ad:
             messagebox.showwarning("Uyarı", "Müşteri Adı boş bırakılamaz.", parent=self.musteri_frame)
             return
-
         if not telefon:
+             # Telefon numarası unique olduğu için boş olmaması daha iyi olabilir
              messagebox.showwarning("Uyarı", "Telefon numarası boş bırakılamaz.", parent=self.musteri_frame)
              return
 
 
         try:
+            # Bakiye değerini float'a çevir, boşsa 0 kabul et
+            initial_balance = float(bakiye_str) if bakiye_str else 0.0
+            # Negatif bakiye (alacak) de girilebilir, kontrol etmeye gerek yok.
+
+
+        except ValueError:
+            messagebox.showwarning("Uyarı", "Bakiye için geçerli bir sayısal değer girin.", parent=self.musteri_frame)
+            return
+
+
+        try:
+            # Kayıt tarihi ekle
+            kayit_tarihi = self._tarih_saat_al_db_format()
+
             self.cursor.execute('''
                 INSERT INTO musteriler (ad, soyad, telefon, adres, kayit_tarihi, cumulative_balance)
                 VALUES (?, ?, ?, ?, ?, ?)
-            ''', (ad, soyad, telefon, adres, self._tarih_saat_al_db_format(), 0.0)) # Yeni müşteri bakiyesi 0 başlar
+            ''', (ad, soyad, telefon, adres, kayit_tarihi, initial_balance)) # <-- Bakiye değeri eklendi
+
             self.conn.commit()
             messagebox.showinfo("Başarılı", "Müşteri başarıyla eklendi.", parent=self.musteri_frame)
             self._musteri_listesini_guncelle() # Listeyi yenile
-            self._musteri_formu_temizle() # Formu temizle
+            self._musteri_formu_temizle() # Formu temizle (bu bakiye alanını tekrar aktif yapar)
+
 
         except sqlite3.IntegrityError:
-            messagebox.showwarning("Uyarı", "Bu telefon numarası zaten kayıtlı.", parent=self.musteri_frame)
+            messagebox.showwarning("Uyarı", f"Bu telefon numarası ({telefon}) zaten mevcut bir müşteriye ait.", parent=self.musteri_frame) # Telefon unique
+            self.conn.rollback() # Hata durumunda geri al
         except sqlite3.Error as e:
             messagebox.showerror("Veritabanı Hatası", f"Müşteri eklenirken hata oluştu: {e}", parent=self.musteri_frame)
-            self.conn.rollback()
+            print(f"Veritabanı hatası _musteri_ekle: {e}")
+            self.conn.rollback() # Hata durumunda geri al
         except Exception as e:
             messagebox.showerror("Hata", f"Müşteri eklenirken beklenmedik hata: {e}", parent=self.musteri_frame)
-            print(f"Müşteri ekleme hatası: {e}")
-
+            print(f"Beklenmedik hata _musteri_ekle: {e}")
 
     def _musteri_guncelle(self):
-        """Seçili müşteriyi günceller."""
+        """Seçili müşteriyi günceller. Bakiye alanı güncellenmez."""
         if self.secili_musteri_id is None:
             messagebox.showwarning("Uyarı", "Lütfen önce listeden güncellenecek bir müşteri seçin.", parent=self.musteri_frame)
             return
 
+        # UI elementlerinin tanımlı olup olmadığını kontrol et
+        if not hasattr(self, 'musteri_ad_entry') or \
+           not hasattr(self, 'musteri_soyad_entry') or \
+           not hasattr(self, 'musteri_telefon_entry') or \
+           not hasattr(self, 'musteri_adres_entry'):
+            print("Hata: Müşteri formu UI elementleri tanımlı değil (_musteri_guncelle).")
+            messagebox.showerror("Hata", "Müşteri güncelleme formu hazır değil.", parent=self.musteri_frame)
+            return
+
         ad = self.musteri_ad_entry.get().strip()
         soyad = self.musteri_soyad_entry.get().strip()
         telefon = self.musteri_telefon_entry.get().strip()
         adres = self.musteri_adres_entry.get().strip()
-        # Bakiye manuel güncellenmiyor, ödeme/veresiye işlemleriyle değişir.
-        # Bu nedenle bakiye entry'sinden değeri almayız.
 
         if not ad:
             messagebox.showwarning("Uyarı", "Müşteri Adı boş bırakılamaz.", parent=self.musteri_frame)
             return
-
         if not telefon:
              messagebox.showwarning("Uyarı", "Telefon numarası boş bırakılamaz.", parent=self.musteri_frame)
              return
 
-
         try:
+            # Müşteri bilgilerini güncelle, bakiye alanını DAHİL ETME
             self.cursor.execute('''
                 UPDATE musteriler
                 SET ad = ?, soyad = ?, telefon = ?, adres = ?
                 WHERE musteri_id = ?
-            ''', (ad, soyad, telefon, adres, self.secili_musteri_id))
+            ''', (ad, soyad, telefon, adres, self.secili_musteri_id)) # <-- Bakiye güncelleme sorgusundan çıkarıldı
+
             self.conn.commit()
             messagebox.showinfo("Başarılı", "Müşteri başarıyla güncellendi.", parent=self.musteri_frame)
             self._musteri_listesini_guncelle() # Listeyi yenile
             self._musteri_formu_temizle() # Formu temizle
 
+
         except sqlite3.IntegrityError:
-            messagebox.showwarning("Uyarı", "Bu telefon numarası zaten başka bir müşteriye ait.", parent=self.musteri_frame)
+            messagebox.showwarning("Uyarı", f"Bu telefon numarası ({telefon}) zaten mevcut bir müşteriye ait.", parent=self.musteri_frame) # Telefon unique
+            self.conn.rollback() # Hata durumunda geri al
         except sqlite3.Error as e:
             messagebox.showerror("Veritabanı Hatası", f"Müşteri güncellenirken hata oluştu: {e}", parent=self.musteri_frame)
-            self.conn.rollback()
+            print(f"Veritabanı hatası _musteri_guncelle: {e}")
+            self.conn.rollback() # Hata durumunda geri al
         except Exception as e:
             messagebox.showerror("Hata", f"Müşteri güncellenirken beklenmedik hata: {e}", parent=self.musteri_frame)
-            print(f"Müşteri güncelleme hatası: {e}")
+            print(f"Beklenmedik hata _musteri_guncelle: {e}")
 
 
     def _musteri_sil(self):
